@@ -1,0 +1,1 @@
+# Ponto de entrada do motor de visão: orquestra frame_extractor, vegetation_detector e classifier

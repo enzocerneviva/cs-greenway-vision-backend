@@ -1,0 +1,1 @@
+# Responsável por detectar vegetação em um frame usando HSV + máscara verde

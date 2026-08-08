@@ -1,0 +1,1 @@
+# Responsável por classificar o percentual de vegetação em Baixa/Média/Alta
