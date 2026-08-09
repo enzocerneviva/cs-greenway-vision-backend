@@ -1,1 +1,0 @@
-# Responsável por abrir o vídeo e extrair frames em intervalos definidos
