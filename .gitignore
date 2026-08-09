@@ -1,0 +1,9 @@
+# Ambiente virtual
+venv/
+
+# Cache do Python
+__pycache__/
+*.pyc
+
+# Uploads e arquivos de teste locais
+vision_playground/frames_extraidos/
