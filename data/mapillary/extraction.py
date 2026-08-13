@@ -15,6 +15,8 @@ from pathlib import Path
 import pandas as pd
 import requests
 from dotenv import load_dotenv
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 load_dotenv()
@@ -34,7 +36,21 @@ BBOX = {
 # de fato, ao contrario da busca por bbox, que traz ruas aleatorias dentro da
 # area). Se essa lista estiver vazia, o script cai de volta para o bbox.
 SEQUENCE_IDS: list[str] = [
-    "4oormcsrucb7t55y3g4lim"
+    "4oormcsrucb7t55y3g4lim",
+    "W7xFZeS2nTAbPsy4m91NQd",
+    "ywjobqlOzXxhNSEDWtai3O",
+    "N8s3FtL17gYUSPArQCBb2V",
+    "n3cvpLNwX7AMkuGdmOIVlf",
+    "u5f00ez0d3o0jb65h7s56u",
+    "QfSjKaVnWUk8Fv_BB37toA",
+    "OfjcwbVZPndxTlihRq7tW2",
+    "8mlyi0lz2v351jps9q74k6",
+    "7ylf54cyglw9t84bsgl3jg",
+    "eWJgVpu9kUcHL71KdsI3ma",
+    "352557qdmxdllh3tcd3rc8",
+    "hsidoijkznsf7gtfu7sdah",
+    "5b4r8ht3wxmvajn40fq8pt",
+    
 ]
 
 FIELDS = "id,sequence,captured_at,compass_angle,geometry,thumb_1024_url"
