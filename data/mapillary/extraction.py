@@ -10,6 +10,7 @@ Objetivo (v1 - so este trecho, nao o dataset completo):
 
 import os
 import time
+from collections import defaultdict
 from pathlib import Path
 
 import pandas as pd
@@ -50,7 +51,7 @@ SEQUENCE_IDS: list[str] = [
     "352557qdmxdllh3tcd3rc8",
     "hsidoijkznsf7gtfu7sdah",
     "5b4r8ht3wxmvajn40fq8pt",
-    
+
 ]
 
 FIELDS = "id,sequence,captured_at,compass_angle,geometry,thumb_1024_url"
@@ -58,6 +59,12 @@ FIELDS = "id,sequence,captured_at,compass_angle,geometry,thumb_1024_url"
 # Limites do experimento: nao queremos o dataset inteiro, so uma amostra para explorar.
 MAX_METADATA_RECORDS = 500
 SAMPLE_DOWNLOAD_COUNT = 20
+
+# Mantem apenas 1 a cada N imagens de cada sequencia (ordenadas por
+# captured_at), para reduzir a redundancia visual entre frames muito
+# proximos entre si ao longo do mesmo trajeto (imagens de dashcam sao
+# capturadas com pouquissima distancia entre uma e outra).
+SEQUENCE_SAMPLE_STEP = 5
 
 # A Graph API rejeita (HTTP 500, "reduce the amount of data you're asking
 # for") bboxes com imagens demais, o que depende da densidade de cobertura
@@ -188,14 +195,43 @@ def fetch_images_metadata(bbox: dict, max_records: int) -> list[dict]:
     return list(records_by_id.values())
 
 
+def subsample_by_sequence(records: list[dict], step: int) -> list[dict]:
+    """Mantem apenas 1 a cada `step` imagens de cada sequencia (ordenadas
+    por captured_at), para reduzir a redundancia visual entre frames muito
+    proximos entre si ao longo do mesmo trajeto.
+
+    Se step <= 1, retorna os registros sem alteracao.
+    """
+    if step <= 1:
+        return records
+
+    grouped: dict[str, list[dict]] = defaultdict(list)
+    for record in records:
+        grouped[record.get("sequence")].append(record)
+
+    sampled: list[dict] = []
+    for seq_records in grouped.values():
+        seq_records.sort(key=lambda r: r.get("captured_at") or 0)
+        sampled.extend(seq_records[::step])
+
+    return sampled
+
+
 def save_metadata_csv(records: list[dict], path: Path) -> pd.DataFrame:
-    """Achata os registros (geometry é um dict aninhado) e salva em CSV."""
+    """Achata os registros (geometry e um dict aninhado) e salva em CSV.
+
+    Se o CSV ja existir, faz MERGE em vez de sobrescrever: linhas cujo 'id'
+    ja esta no arquivo sao mantidas como estao (preservando colunas extras,
+    como 'label', adicionadas pelo processo de rotulacao manual). Apenas
+    ids novos, vindos desta consulta, sao anexados ao final. Nada que ja
+    existia e apagado ou alterado.
+    """
     rows = []
     for record in records:
         coordinates = record.get("geometry", {}).get("coordinates", [None, None])
         rows.append(
             {
-                "id": record.get("id"),
+                "id": str(record.get("id")),
                 "sequence": record.get("sequence"),
                 "captured_at": record.get("captured_at"),
                 "compass_angle": record.get("compass_angle"),
@@ -205,7 +241,20 @@ def save_metadata_csv(records: list[dict], path: Path) -> pd.DataFrame:
             }
         )
 
-    df = pd.DataFrame(rows)
+    new_df = pd.DataFrame(rows)
+
+    if path.exists():
+        existing_df = pd.read_csv(path, dtype={"id": str})
+        existing_ids = set(existing_df["id"])
+        only_new = new_df[~new_df["id"].isin(existing_ids)]
+        df = pd.concat([existing_df, only_new], ignore_index=True, sort=False)
+        print(
+            f"  {len(existing_df)} ja existiam no CSV, "
+            f"{len(only_new)} nova(s) adicionada(s)"
+        )
+    else:
+        df = new_df
+
     df.to_csv(path, index=False)
     return df
 
@@ -253,6 +302,9 @@ def main():
         print("  modo: bbox (SEQUENCE_IDS vazio)")
         records = fetch_images_metadata(BBOX, MAX_METADATA_RECORDS)
     print(f"Total de metadados obtidos: {len(records)}")
+
+    records = subsample_by_sequence(records, SEQUENCE_SAMPLE_STEP)
+    print(f"Apos amostragem (1 a cada {SEQUENCE_SAMPLE_STEP} por sequencia): {len(records)}")
 
     print("\n2. Salvando metadados em CSV...")
     df = save_metadata_csv(records, METADATA_CSV)
