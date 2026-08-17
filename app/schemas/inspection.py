@@ -16,8 +16,3 @@ class InspectionResponse(BaseModel):
 
     class Config:
         from_attributes = True
-
-
-class VideoUploadResponse(BaseModel):
-    original_filename: str
-    stored_path: str

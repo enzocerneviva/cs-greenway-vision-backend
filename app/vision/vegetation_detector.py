@@ -1,4 +1,10 @@
-# Responsável por detectar vegetação em um frame usando HSV + máscara verde
+# Pré-filtro barato baseado em cor (HSV + máscara verde).
+#
+# Não é mais o classificador final do Vision Engine — só estima quanto de um
+# frame é "verde" pra decidir se vale a pena gastar o modelo treinável nele
+# (ex.: um frame que é só guarda-corpo/asfalto não precisa passar pelo
+# classificador). A classificação de severidade em si fica a cargo do
+# modelo treinável (ver app/vision/engine.py).
 
 import cv2
 import numpy as np
