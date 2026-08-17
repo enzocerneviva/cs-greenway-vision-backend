@@ -1,15 +1,17 @@
+from typing import Optional
 from pydantic import BaseModel
 from datetime import datetime
 
-class InspectionCreate(BaseModel):
-    measurement_value: float
-    measurement_unit: str = "cm"
 
 class InspectionResponse(BaseModel):
     id: int
-    measurement_value: float
-    measurement_unit: str
-    priority: str
+    video_id: int
+    measurement_value: Optional[float]
+    measurement_unit: Optional[str]
+    priority: Optional[str]
+    model_version: Optional[str]
+    status: str
+    analyzed_at: Optional[datetime]
     created_at: datetime
 
     class Config:

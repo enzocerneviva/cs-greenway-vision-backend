@@ -1,10 +1,9 @@
 from typing import List
 
 from fastapi import FastAPI, Depends, File, HTTPException, UploadFile
-from app.schemas.inspection import InspectionCreate, InspectionResponse, VideoUploadResponse
-from app.models.inspection import Inspection
+from app.schemas.inspection import InspectionResponse, VideoUploadResponse
+from app.models import Inspection
 from app.database.session import Base, engine, SessionLocal, get_db
-from app.services.classification import classify_priority
 from app.services.inspection_service import save_inspection_video
 from sqlalchemy.orm import Session
 
@@ -19,23 +18,6 @@ Base.metadata.create_all(bind=engine)
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
-
-@app.post("/inspections", response_model=InspectionResponse)
-def create_inspection(payload: InspectionCreate, db: Session = Depends(get_db)):
-
-    priority = classify_priority(payload.measurement_value)
-
-    inspection = Inspection(
-        measurement_value=payload.measurement_value,
-        measurement_unit=payload.measurement_unit,
-        priority=priority
-    )
-
-    db.add(inspection)
-    db.commit()
-    db.refresh(inspection)
-    return inspection
-
 
 @app.get("/inspections", response_model=List[InspectionResponse])
 def list_inspections(db: Session = Depends(get_db)):

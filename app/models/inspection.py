@@ -1,14 +1,20 @@
-from sqlalchemy import Column, Integer, Float, String, DateTime
+from sqlalchemy import Column, Integer, Float, String, DateTime, ForeignKey
 from datetime import datetime, timezone
 from app.database.session import Base
 
-# Tabela Inspeção (inspections)
+
 class Inspection(Base):
     __tablename__ = "inspections"
 
-    # Colunas
     id = Column(Integer, primary_key=True, index=True)
-    measurement_value = Column(Float, nullable=False) # Medição da vegetação
-    measurement_unit = Column(String, default="cm") # Unidade da medição (cm)
-    priority = Column(String, nullable=False)
+    video_id = Column(Integer, ForeignKey("videos.id"), nullable=False, unique=True)
+
+    measurement_value = Column(Float, nullable=True)  # nulo se a análise falhar
+    measurement_unit = Column(String, nullable=True)
+    priority = Column(String, nullable=True)  # LOW / MEDIUM / HIGH
+
+    model_version = Column(String, nullable=True)
+    status = Column(String, nullable=False)  # DONE / FAILED
+    analyzed_at = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
