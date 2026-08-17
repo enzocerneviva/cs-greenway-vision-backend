@@ -570,6 +570,8 @@ app/
 │
 ├── schemas/
 │
+├── repositories/
+│
 ├── services/
 │
 ├── vision/
@@ -617,11 +619,15 @@ SQLAlchemy ORM models representing persisted entities.
 
 Pydantic models representing API input/output contracts.
 
+### `app/repositories/`
+
+Data access layer. Encapsulates SQLAlchemy queries (`create`, `get_by_id`, `list_all`) per entity, so services and routes never build queries directly against the `Session`.
+
 ### `app/services/`
 
 Application/business logic and orchestration.
 
-Services coordinate operations between API, Vision Engine, storage, and database.
+Services coordinate operations between API, Vision Engine, storage, and database — going through `app/repositories/` for persistence instead of touching the database directly.
 
 ### `app/vision/`
 

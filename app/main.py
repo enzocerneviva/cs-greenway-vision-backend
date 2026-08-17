@@ -2,9 +2,9 @@ from typing import List
 
 from fastapi import FastAPI, Depends, File, HTTPException, UploadFile
 from app.schemas.inspection import InspectionResponse, VideoUploadResponse
-from app.models import Inspection
 from app.database.session import Base, engine, SessionLocal, get_db
 from app.services.inspection_service import save_inspection_video
+from app.repositories import inspection_repository
 from sqlalchemy.orm import Session
 
 app = FastAPI(
@@ -21,12 +21,12 @@ def health_check():
 
 @app.get("/inspections", response_model=List[InspectionResponse])
 def list_inspections(db: Session = Depends(get_db)):
-    return db.query(Inspection).all()
+    return inspection_repository.list_all(db)
 
 
 @app.get("/inspections/{inspection_id}", response_model=InspectionResponse)
 def get_inspection(inspection_id: int, db: Session = Depends(get_db)):
-    inspection = db.get(Inspection, inspection_id)
+    inspection = inspection_repository.get_by_id(db, inspection_id)
     if inspection is None:
         raise HTTPException(status_code=404, detail="Inspection not found")
     return inspection

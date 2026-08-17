@@ -70,6 +70,10 @@ Vision Engine
 ↓
 Processamento de visão computacional
 
+Repositories
+↓
+Acesso a dados (queries, inserts) isolado do restante da aplicação
+
 Database
 ↓
 Persistência
@@ -141,6 +145,24 @@ InspectionService
 ```
 
 O Service não deve implementar diretamente algoritmos de processamento de imagem.
+
+---
+
+# 5.1 Repositories
+
+A camada de Repository isola o acesso a dados (queries e inserts via SQLAlchemy) do restante da aplicação.
+
+```text
+Service
+   ↓
+Repository
+   ↓
+SQLAlchemy Session
+```
+
+Sem essa camada, cada Service (ou rota) precisaria montar suas próprias queries diretamente, espalhando conhecimento sobre a estrutura do banco pela aplicação. Com o Repository, o Service pede o dado (`inspection_repository.get_by_id(db, id)`) sem saber como a busca é feita internamente.
+
+Cada entidade (`Road`, `Segment`, `Video`, `Inspection`) tem seu próprio módulo de repository em `app/repositories/`, com operações básicas (`create`, `get_by_id`, `list_all`).
 
 ---
 
