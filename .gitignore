@@ -4,12 +4,9 @@ __pycache__/
 .env
 storage/
 *.db
-# Ambiente virtual
-venv/
-
-# Cache do Python
-__pycache__/
-*.pyc
 
 # Uploads e arquivos de teste locais
 vision_playground/frames_extraidos/
+
+# Imagens baixadas do Mapillary (regeneraveis via extraction.py)
+data/mapillary/images/
