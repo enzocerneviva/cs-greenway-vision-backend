@@ -256,31 +256,29 @@ Os valores devem ser centralizados em uma regra de negócio, evitando que sejam 
 
 # 8. Contrato Vision Engine
 
-A comunicação entre o restante da aplicação e o Vision Engine será baseada em um contrato explícito.
+A comunicação entre o restante da aplicação e o Vision Engine é feita através de um contrato explícito, implementado em `app/vision/analysis_result.py` e `app/vision/engine.py`.
 
-Entrada conceitual:
+Entrada:
 
 ```python
-analyze(video_path)
+from app.vision import engine as vision_engine
+vision_engine.analyze(video_path)
 ```
 
-Saída conceitual:
+Saída (`AnalysisResult`):
 
-```json
-{
-  "measurement": {
-    "value": 24.5,
-    "unit": "cm"
-  },
-  "classification": {
-    "priority": "MEDIUM"
-  }
-}
+```python
+@dataclass
+class AnalysisResult:
+    priority: str                          # LOW / MEDIUM / HIGH
+    model_version: str
+    measurement_value: Optional[float] = None
+    measurement_unit: Optional[str] = None
 ```
 
-O restante da aplicação não deve depender de como a medida foi obtida.
+**Nota importante sobre `measurement_value`**: o classificador v1 (baseado em imagens de referência sem calibração de câmera) prevê a `priority` diretamente a partir da imagem — ele não produz uma medida física real em centímetros. Por isso `measurement_value`/`measurement_unit` ficam `None` nesse caminho. `classify_priority()` (`app/services/classification.py`), que aplica a regra oficial baseada em cm, permanece centralizado e será usado quando existir uma fonte real de medição calibrada (ex.: câmera lateral).
 
-Por exemplo, o Service não deve saber se o Vision Engine utilizou:
+O restante da aplicação não deve depender de como a medida foi obtida. Por exemplo, o Service não deve saber se o Vision Engine utilizou:
 
 - segmentação por cor;
 - análise geométrica;
@@ -289,6 +287,25 @@ Por exemplo, o Service não deve saber se o Vision Engine utilizou:
 - calibração da câmera.
 
 Esses detalhes pertencem ao Vision Engine.
+
+## 8.1 Implementação atual (v1 — baseline)
+
+```text
+Vídeo
+  ↓
+extrair_frames()               → app/vision/frame_extractor.py
+  ↓
+pré-filtro por cor (HSV)       → app/vision/vegetation_detector.py
+  (descarta frames sem vegetação relevante, barato de rodar)
+  ↓
+classificador                  → hoje MOCKADO (app/vision/engine.py);
+                                  será um classificador scikit-learn
+                                  treinado sobre embeddings extraídos
+                                  por uma CNN pré-treinada (transfer
+                                  learning, sem treinar a rede do zero)
+  ↓
+AnalysisResult
+```
 
 ---
 
@@ -322,27 +339,31 @@ A aplicação não deverá depender de SQL específico do banco sempre que isso 
 
 ## Models
 
-Representam entidades persistidas.
-
-Exemplos futuros:
+Representam entidades persistidas (`app/models/`). O modelo de dados reflete o domínio real, não uma tabela única:
 
 ```text
-Inspection
-Road
-Analysis
+Road (rodovia)
+  id, name
+        │
+        ▼
+Segment (trecho da rodovia, com sentido/direção)
+  id, road_id, km_start, km_end, direction
+        │
+        ▼
+Video (o vídeo enviado numa inspeção)
+  id, segment_id, file_path, original_filename, uploaded_at
+        │
+        ▼
+Inspection (resultado de UMA análise — vínculo 1:1 com Video)
+  id, video_id (único), measurement_value, measurement_unit,
+  priority, model_version, status (DONE/FAILED), analyzed_at, created_at
 ```
+
+`Road`/`Segment` existem como cadastro relativamente estável. `Video` nasce no upload. `Inspection` nasce (ou falha) na análise — por isso são tabelas separadas: cada uma tem um ciclo de vida diferente.
 
 ## Schemas
 
-Representam os contratos utilizados pela API.
-
-Exemplos:
-
-```text
-InspectionRequest
-InspectionResponse
-AnalysisResponse
-```
+Representam os contratos utilizados pela API (`app/schemas/`): `RoadCreate`/`RoadResponse`, `SegmentCreate`/`SegmentResponse`, `InspectionResponse`.
 
 Essa separação evita acoplar diretamente a estrutura interna do banco aos contratos públicos da API.
 
@@ -350,48 +371,44 @@ Essa separação evita acoplar diretamente a estrutura interna do banco aos cont
 
 # 11. Fluxo completo de uma inspeção
 
-O fluxo esperado do MVP é:
+Implementado (`POST /inspections`, multipart: `segment_id` + vídeo):
 
 ```text
                  FRONTEND
                     │
                     │ POST /inspections
-                    │ video
+                    │ segment_id + video
                     ▼
-                 FASTAPI
+              ROTA (app/api/routes/inspection.py)
+                    │  fina — delega tudo pro service
+                    ▼
+       INSPECTION SERVICE (app/services/inspection_service.py)
+                    │
+                    │ 1. valida que o Segment existe (404 se não)
+                    │ 2. salva o vídeo em disco (storage/videos/)
+                    │ 3. persiste o Video (via Repository)
+                    ▼
+              VISION ENGINE (app/vision/engine.py)
                     │
                     ▼
-            INSPECTION SERVICE
+                VIDEO FRAMES  →  PRÉ-FILTRO (HSV)  →  CLASSIFICAÇÃO
+                    │
+                    ▼
+              ANALYSIS RESULT
                     │
           ┌─────────┴─────────┐
-          │                   │
-          ▼                   ▼
-       STORAGE          VISION ENGINE
-                              │
-                              ▼
-                         VIDEO FRAMES
-                              │
-                              ▼
-                         DETECTION
-                              │
-                              ▼
-                         MEASUREMENT
-                              │
-                              ▼
-                       CLASSIFICATION
-                              │
-                              ▼
-                       ANALYSIS RESULT
-                              │
-          ┌───────────────────┘
-          ▼
-       DATABASE
-          │
-          ▼
-       RESPONSE
-          │
-          ▼
-       FRONTEND
+          │ sucesso            │ exceção
+          ▼                    ▼
+   Inspection(status=DONE)  Inspection(status=FAILED)
+                    │
+                    ▼
+       persiste via Repository → DATABASE
+                    │
+                    ▼
+                RESPONSE
+                    │
+                    ▼
+                FRONTEND
 ```
 
 ---

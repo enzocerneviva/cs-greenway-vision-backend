@@ -26,15 +26,15 @@ Armazenamento do resultado
 Consulta pela plataforma
 ```
 
-A classificação inicial será baseada na medida obtida:
+A classificação oficial do projeto é baseada na medida em centímetros:
 
 | Medição | Classificação |
 |---|---|
-| < 10 cm | Baixa |
-| 10 cm ≤ medida ≤ 30 cm | Média |
-| > 30 cm | Alta |
+| < 10 cm | LOW |
+| 10 cm ≤ medida ≤ 30 cm | MEDIUM |
+| > 30 cm | HIGH |
 
-Os valores acima representam as regras definidas para o MVP.
+Essa regra está centralizada em `app/services/classification.py`. O classificador v1 (primeira versão do modelo treinável, sem calibração de câmera) prevê a classificação diretamente da imagem, sem produzir uma medida em cm real — ver `docs/architecture.md` §8 para o contrato completo.
 
 ## Tecnologias
 
@@ -92,6 +92,8 @@ app/
 │
 ├── schemas/
 │
+├── repositories/
+│
 ├── services/
 │
 ├── vision/
@@ -144,7 +146,11 @@ O módulo não deve depender diretamente de FastAPI ou do banco de dados.
 
 ### `models/`
 
-Contém os modelos utilizados para representar as entidades persistidas no banco de dados.
+Contém os modelos utilizados para representar as entidades persistidas no banco de dados: `Road`, `Segment`, `Video`, `Inspection`.
+
+### `repositories/`
+
+Contém o acesso a dados (queries e inserts via SQLAlchemy), um módulo por entidade. Services e rotas não montam queries diretamente — sempre passam por aqui.
 
 ### `schemas/`
 
@@ -168,42 +174,25 @@ Contém os testes automatizados do projeto.
 
 ## Contrato entre API e Vision Engine
 
-A API e o motor de visão computacional serão desenvolvidos de forma independente.
-
-Para permitir o desenvolvimento paralelo da equipe, o Vision Engine deverá possuir uma interface clara.
-
-Conceitualmente:
+A API e o motor de visão computacional são desenvolvidos de forma independente, comunicando-se apenas pelo contrato abaixo (`app/vision/engine.py` + `app/vision/analysis_result.py`):
 
 ```python
+from app.vision import engine as vision_engine
 result = vision_engine.analyze(video_path)
 ```
 
-O resultado deverá conter, no mínimo:
-
-```text
-measurement
-    value
-    unit
-
-classification
-    priority
+```python
+@dataclass
+class AnalysisResult:
+    priority: str                          # LOW / MEDIUM / HIGH
+    model_version: str
+    measurement_value: Optional[float] = None
+    measurement_unit: Optional[str] = None
 ```
 
-Exemplo conceitual:
+Hoje a classificação é **simulada** (`model_version = "mock-v0"`) — o modelo treinável real (classificador scikit-learn sobre embeddings de uma CNN pré-treinada) entra depois, sem mudar essa interface. Veja `docs/architecture.md` §8 para detalhes, incluindo por que `measurement_value` fica `None` no v1.
 
-```json
-{
-  "measurement": {
-    "value": 24.5,
-    "unit": "cm"
-  },
-  "classification": {
-    "priority": "MEDIUM"
-  }
-}
-```
-
-A implementação interna utilizada para obter a medida poderá evoluir sem alterar a interface utilizada pelo restante do backend.
+A implementação interna utilizada para obter a classificação pode evoluir sem alterar a interface usada pelo restante do backend.
 
 ## Desenvolvimento
 
@@ -233,30 +222,34 @@ As alterações devem ser integradas à `master` por meio de Pull Requests.
 
 ## Status
 
-Projeto em fase inicial de desenvolvimento.
+O fluxo completo do MVP está funcional ponta a ponta, com o modelo de classificação simulado:
+
+```text
+POST /roads, POST /segments   → cadastro de rodovia/trecho
+POST /inspections              → upload do vídeo, extração de frames,
+                                  pré-filtro por cor, classificação
+                                  (simulada), persistência
+GET /inspections, GET /inspections/{id} → consulta dos resultados
+```
 
 ### Fase atual
 
-**Fase 0 — Fundação do projeto**
+**Vision Engine — integração do modelo real**
 
-Objetivos:
+O que falta pra sair do "v1 simulado" pro modelo de verdade:
 
-- estrutura inicial;
-- configuração do ambiente;
-- API mínima;
-- documentação da arquitetura;
-- definição das interfaces entre os módulos.
+- treinar o classificador com o dataset rotulado (~700 imagens com gabarito, em preparação por outro desenvolvedor);
+- extrair embeddings com uma CNN pré-treinada (transfer learning, sem treinar a rede) e treinar um classificador `scikit-learn` (Random Forest) em cima;
+- substituir `_classify_frame_mock()` (`app/vision/engine.py`) pela chamada ao modelo treinado, carregado uma vez na inicialização.
+
+### Concluído
+
+- API, banco de dados (Road → Segment → Video → Inspection), camada de Repository, upload de vídeo com validação, pipeline de visão computacional (extração de frames + pré-filtro), classificação simulada, persistência e consulta — tudo integrado e testado ponta a ponta.
 
 ## Próximos passos
 
-1. Configurar ambiente Python.
-2. Configurar FastAPI e Uvicorn.
-3. Criar endpoint `/health`.
-4. Definir modelos e schemas iniciais.
-5. Configurar SQLite.
-6. Implementar upload de vídeos.
-7. Criar interface do Vision Engine.
-8. Implementar protótipo do processamento de vídeo.
-9. Implementar medição e classificação.
-10. Integrar frontend e backend.
-11. Avaliar migração para PostgreSQL.
+1. Treinar e integrar o modelo real de classificação (ver "Fase atual").
+2. Testes automatizados cobrindo Vision Engine e API isoladamente.
+3. Integrar frontend e backend.
+4. Avaliar migração para PostgreSQL.
+5. Avaliar georreferenciamento das inspeções (fase futura, fora do escopo atual).
