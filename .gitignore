@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pyc
+.env
+
+# Imagens baixadas do Mapillary (regeneraveis via extraction.py)
+data/mapillary/images/
