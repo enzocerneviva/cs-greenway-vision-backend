@@ -10,6 +10,7 @@ from app.models import Road, Segment
 # (nome, concessionária, km_start, km_end)
 ROADS = [
     ("SP-330 (Anhanguera)", "AutoBān", 11.0, 158.0),
+    ("SP-348 (Bandeirantes)", "AutoBān", 13.0, 173.0),
 ]
 
 
