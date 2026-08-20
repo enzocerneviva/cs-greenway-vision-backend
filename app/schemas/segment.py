@@ -13,6 +13,13 @@ class SegmentCreate(BaseModel):
     lng_end: Optional[float] = None
 
 
+class SegmentLocationUpdate(BaseModel):
+    lat_start: float
+    lng_start: float
+    lat_end: float
+    lng_end: float
+
+
 class SegmentResponse(BaseModel):
     id: int
     road_id: int

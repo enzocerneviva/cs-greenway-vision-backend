@@ -16,3 +16,9 @@ def get_by_id(db: Session, segment_id: int) -> Optional[Segment]:
 
 def list_all(db: Session) -> List[Segment]:
     return db.query(Segment).all()
+
+
+def update(db: Session, segment: Segment) -> Segment:
+    db.commit()
+    db.refresh(segment)
+    return segment
