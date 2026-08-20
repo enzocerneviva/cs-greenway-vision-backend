@@ -161,7 +161,11 @@ def _persist_frame_analyses(
     km_range = range_end - range_start
 
     for frame_result in frame_results:
-        fraction = frame_result.frame_index / (total - 1) if total > 1 else 0.0
+        # frame_index / total (não / (total - 1)) de propósito: o último
+        # frame não pode cair exatamente em range_end, porque os blocos de
+        # 500m são um intervalo semiaberto [kmStart, kmEnd) — um frame
+        # exatamente em kmEnd "vazava" pro bloco seguinte.
+        fraction = frame_result.frame_index / total
         estimated_km = range_start + fraction * km_range
 
         image_path = None
