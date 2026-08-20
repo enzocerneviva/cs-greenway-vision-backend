@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, Float, String, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from app.database.session import Base
 
@@ -18,3 +19,5 @@ class Inspection(Base):
     analyzed_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    frame_analyses = relationship("FrameAnalysis", order_by="FrameAnalysis.frame_index")

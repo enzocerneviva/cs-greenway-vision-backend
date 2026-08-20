@@ -1,48 +1,85 @@
 # Ponto de entrada do Vision Engine: orquestra frame_extractor, o pré-filtro
-# de vegetação e o modelo de classificação.
+# de vegetação e o modelo de classificação treinado.
 #
 # Contrato: analyze(video_path) -> AnalysisResult (docs/architecture.md §8).
 # Este módulo não deve depender de FastAPI, SQLAlchemy ou qualquer detalhe
 # do backend — recebe um caminho de vídeo, devolve um resultado.
 
+from pathlib import Path
+
+import cv2
+import joblib
+from PIL import Image
+
+from app.vision.analysis_result import AnalysisResult, FrameResult
+from app.vision.feature_extractor_cnn import extract_embedding
 from app.vision.frame_extractor import extrair_frames
 from app.vision.vegetation_detector import detectar_vegetacao
-from app.vision.analysis_result import AnalysisResult
 
-# Modelo treinável ainda não existe (entra quando o dataset rotulado
-# estiver disponível). Até lá, o resultado é simulado.
-MODEL_VERSION = "mock-v0"
+# Modelo treinado em data/mapillary/train_classifier.py sobre o dataset
+# rotulado do Mapillary (v1 — baseline aproximado, ver docs/architecture.md §8).
+MODEL_PATH = Path(__file__).resolve().parents[2] / "data" / "mapillary" / "model" / "classifier.joblib"
+MODEL_VERSION = "mapillary-v1-randomforest"
 
 # % mínimo de "verde" num frame pra considerá-lo relevante o suficiente
-# pra valer a pena classificar. Valor provisório — será calibrado quando
-# houver dados reais rotulados.
+# pra valer a pena classificar.
 PRE_FILTER_MIN_GREEN_PERCENT = 5.0
 
+# Ordem de severidade, usada pra escolher o pior caso entre os frames
+# relevantes de um vídeo — mais seguro superestimar a prioridade do trecho
+# do que deixar passar um ponto realmente crítico visto em só alguns frames.
+_PRIORITY_SEVERITY = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
 
-def _classify_frame_mock(frame) -> str:
-    """
-    Substitui temporariamente o modelo treinável. Retorna sempre a mesma
-    classificação simulada, só para validar o pipeline ponta a ponta antes
-    do modelo real (embeddings de CNN pré-treinada + classificador
-    scikit-learn) estar pronto.
-    """
-    return "MEDIUM"
+_classifier = joblib.load(MODEL_PATH)
 
 
-def analyze(video_path: str) -> AnalysisResult:
-    frames = extrair_frames(video_path)
+def _frame_to_pil(frame) -> Image.Image:
+    # cv2 devolve o frame em BGR; o extrator de embeddings espera RGB.
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    return Image.fromarray(rgb_frame)
+
+
+def _classify_frame(frame) -> str:
+    embedding = extract_embedding(_frame_to_pil(frame))
+    return _classifier.predict([embedding])[0]
+
+
+def analyze(file_path: str, media_type: str = "video") -> AnalysisResult:
+    if media_type == "image":
+        frame = cv2.imread(file_path)
+        if frame is None:
+            raise ValueError(f"Não foi possível abrir a imagem: {file_path}")
+        # imagem não tem timestamp real — é um único ponto, não uma sequência no tempo
+        frames = [(frame, 0.0)]
+    else:
+        frames = extrair_frames(file_path)
 
     if not frames:
-        raise ValueError(f"Nenhum frame foi extraído do vídeo: {video_path}")
+        raise ValueError(f"Nenhum frame foi extraído do vídeo: {file_path}")
 
-    relevant_frames = [
-        frame for frame in frames
-        if detectar_vegetacao(frame) >= PRE_FILTER_MIN_GREEN_PERCENT
-    ]
+    frame_results = []
+    for index, (frame, timestamp_seconds) in enumerate(frames):
+        green_percent = detectar_vegetacao(frame)
 
-    if not relevant_frames:
-        return AnalysisResult(priority="LOW", model_version=MODEL_VERSION)
+        # Frame sem verde suficiente não passa pelo classificador — LOW por
+        # convenção (mesmo raciocínio de antes), mas ainda vira um ponto no
+        # rastro, pra a visualização por frame ficar contínua.
+        if green_percent >= PRE_FILTER_MIN_GREEN_PERCENT:
+            priority = _classify_frame(frame)
+        else:
+            priority = "LOW"
 
-    priority = _classify_frame_mock(relevant_frames[0])
+        frame_results.append(FrameResult(
+            frame_index=index,
+            timestamp_seconds=timestamp_seconds,
+            green_percent=green_percent,
+            priority=priority,
+        ))
 
-    return AnalysisResult(priority=priority, model_version=MODEL_VERSION)
+    worst_priority = max(frame_results, key=lambda fr: _PRIORITY_SEVERITY[fr.priority]).priority
+
+    return AnalysisResult(
+        priority=worst_priority,
+        model_version=MODEL_VERSION,
+        frame_results=frame_results,
+    )

@@ -1,6 +1,8 @@
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
+
+from app.schemas.frame_analysis import FrameAnalysisResponse
 
 
 class InspectionResponse(BaseModel):
@@ -13,6 +15,7 @@ class InspectionResponse(BaseModel):
     status: str
     analyzed_at: Optional[datetime]
     created_at: datetime
+    frame_analyses: List[FrameAnalysisResponse] = []
 
     class Config:
         from_attributes = True

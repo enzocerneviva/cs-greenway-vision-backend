@@ -3,10 +3,13 @@
 
 import cv2
 
+
 def extrair_frames(caminho_video: str, intervalo_segundos: int = 1) -> list:
     """
-    Recebe o caminho de um vídeo e retorna uma lista de frames (arrays numpy),
-    extraindo 1 frame a cada 'intervalo_segundos' segundos.
+    Recebe o caminho de um vídeo e retorna uma lista de tuplas
+    (frame, timestamp_segundos) — o timestamp é a posição real desse frame
+    dentro do arquivo de vídeo, extraindo 1 frame a cada 'intervalo_segundos'
+    segundos.
     """
     video = cv2.VideoCapture(caminho_video)
 
@@ -26,7 +29,8 @@ def extrair_frames(caminho_video: str, intervalo_segundos: int = 1) -> list:
             break
 
         if frame_atual % intervalo == 0:
-            frames_extraidos.append(frame)
+            timestamp_segundos = frame_atual / fps
+            frames_extraidos.append((frame, timestamp_segundos))
 
         frame_atual += 1
 
