@@ -84,7 +84,11 @@ def save_inspection_media(file: UploadFile) -> tuple[str, str]:
 
 
 def create_inspection(
-    db: Session, segment_id: int, file: UploadFile, km: float | None = None
+    db: Session,
+    segment_id: int,
+    file: UploadFile,
+    km_start: float | None = None,
+    km_end: float | None = None,
 ) -> Inspection:
     segment = segment_repository.get_by_id(db, segment_id)
     if segment is None:
@@ -122,10 +126,9 @@ def create_inspection(
     )
     inspection = inspection_repository.create(db, inspection)
 
-    # km só faz sentido pra foto avulsa (um frame só, sem sequência pra
-    # interpolar posição) — silenciosamente ignorado se vier junto de vídeo.
-    override_km = km if media_type == "image" else None
-    _persist_frame_analyses(db, inspection.id, segment, result.frame_results, override_km=override_km)
+    _persist_frame_analyses(
+        db, inspection.id, segment, result.frame_results, km_start=km_start, km_end=km_end
+    )
 
     return inspection
 
@@ -135,24 +138,29 @@ def _persist_frame_analyses(
     inspection_id: int,
     segment: Segment,
     frame_results: list[FrameResult],
-    override_km: float | None = None,
+    km_start: float | None = None,
+    km_end: float | None = None,
 ) -> None:
     """
-    Salva o detalhe por frame. A posição de cada frame vem de:
-    - override_km, se informado (upload de foto representando um km exato,
-      escolhido pelo usuário — não dá pra interpolar com 1 frame só);
-    - senão, interpolação linear entre km_start/km_end do Segment
-      (aproximação v1, não é GPS real).
+    Salva o detalhe por frame. O intervalo de km sobre o qual os frames são
+    interpolados vem de:
+    - km_start/km_end, se informados — o vídeo/foto não necessariamente
+      cobre o trecho inteiro (um vídeo de poucos segundos pode representar
+      só 500m de uma rodovia de 150km). Foto usa km_start == km_end (um
+      único ponto: o único frame cai exatamente ali).
+    - senão, km_start/km_end do Segment inteiro (comportamento antigo,
+      assume que o arquivo cobre o trecho todo).
+    Dentro do intervalo escolhido, a posição de cada frame é interpolação
+    linear por índice — aproximação v1, não é GPS real.
     """
     total = len(frame_results)
-    km_range = segment.km_end - segment.km_start
+    range_start = km_start if km_start is not None else segment.km_start
+    range_end = km_end if km_end is not None else segment.km_end
+    km_range = range_end - range_start
 
     for frame_result in frame_results:
-        if override_km is not None:
-            estimated_km = override_km
-        else:
-            fraction = frame_result.frame_index / (total - 1) if total > 1 else 0.0
-            estimated_km = segment.km_start + fraction * km_range
+        fraction = frame_result.frame_index / (total - 1) if total > 1 else 0.0
+        estimated_km = range_start + fraction * km_range
 
         image_path = None
         if frame_result.image_path is not None:

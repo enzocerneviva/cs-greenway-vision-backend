@@ -27,14 +27,19 @@ def get_inspection(inspection_id: int, db: Session = Depends(get_db)):
 def create_inspection(
     segment_id: int = Form(...),
     file: UploadFile = File(...),
-    km: Optional[float] = Form(None),
+    km_start: Optional[float] = Form(None),
+    km_end: Optional[float] = Form(None),
     db: Session = Depends(get_db),
 ):
     """
-    km: posição exata (opcional) que o arquivo representa — usado sobretudo
-    pra upload de foto avulsa, onde não faz sentido interpolar a posição
-    entre km_start/km_end do trecho (não há sequência de frames pra
-    interpolar sobre). Ignorado silenciosamente pra vídeo, que continua
-    usando a interpolação por frame.
+    km_start/km_end: intervalo exato (opcional) que o arquivo cobre —
+    necessário porque nem todo vídeo cobre o trecho inteiro (um vídeo de
+    poucos segundos pode representar só 500m de uma rodovia de 150km).
+    Quando informado, os frames são interpolados dentro desse intervalo em
+    vez de km_start/km_end do Segment inteiro. Foto usa km_start == km_end
+    (um único ponto). Se nenhum dos dois vier, mantém o comportamento
+    antigo: interpola sobre o trecho inteiro.
     """
-    return inspection_service.create_inspection(db, segment_id, file, km=km)
+    return inspection_service.create_inspection(
+        db, segment_id, file, km_start=km_start, km_end=km_end
+    )
