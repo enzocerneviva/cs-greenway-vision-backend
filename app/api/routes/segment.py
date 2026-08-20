@@ -21,6 +21,10 @@ def create_segment(payload: SegmentCreate, db: Session = Depends(get_db)):
         km_start=payload.km_start,
         km_end=payload.km_end,
         direction=payload.direction,
+        lat_start=payload.lat_start,
+        lng_start=payload.lng_start,
+        lat_end=payload.lat_end,
+        lng_end=payload.lng_end,
     )
     return segment_repository.create(db, segment)
 
