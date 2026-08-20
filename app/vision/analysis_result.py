@@ -10,6 +10,10 @@ class FrameResult:
     timestamp_seconds: float
     green_percent: float
     priority: str
+    # Caminho (relativo à raiz do projeto, estilo storage/frames/...) da
+    # imagem do frame salva em disco — None se quem chamou analyze() não
+    # pediu pra persistir os frames (ex.: testes do vision engine isolado).
+    image_path: Optional[str] = None
 
 
 @dataclass

@@ -1,6 +1,7 @@
 import os
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
@@ -14,6 +15,10 @@ from app.repositories import (
 )
 from app.vision import engine as vision_engine
 from app.vision.analysis_result import FrameResult
+
+# Ancorado na raiz do projeto (não no cwd do processo) — mesmo motivo do
+# path do banco em app/database/session.py.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 ALLOWED_VIDEO_CONTENT_TYPES = {
     "video/mp4",
@@ -29,8 +34,9 @@ ALLOWED_IMAGE_CONTENT_TYPES = {
 MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB
 MAX_IMAGE_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB — imagem é bem menor que vídeo
 
-VIDEO_STORAGE_DIR = "storage/videos"
-IMAGE_STORAGE_DIR = "storage/images"
+VIDEO_STORAGE_DIR = PROJECT_ROOT / "storage" / "videos"
+IMAGE_STORAGE_DIR = PROJECT_ROOT / "storage" / "images"
+FRAME_STORAGE_DIR = PROJECT_ROOT / "storage" / "frames"
 
 
 def _resolve_media_type(content_type: str) -> str:
@@ -91,12 +97,14 @@ def create_inspection(db: Session, segment_id: int, file: UploadFile) -> Inspect
         media_type=media_type,
     ))
 
+    frame_image_dir = FRAME_STORAGE_DIR / str(video.id)
+
     # O arquivo já está salvo e o Video persistido nesse ponto. Se a análise
     # falhar por qualquer motivo (vídeo/imagem corrompido, sem frames
     # extraíveis, erro do modelo), a inspeção é registrada como FAILED em
     # vez de perder a referência ao arquivo ou estourar um 500 pro cliente.
     try:
-        result = vision_engine.analyze(stored_path, media_type)
+        result = vision_engine.analyze(stored_path, media_type, frame_image_dir=frame_image_dir)
     except Exception:
         inspection = Inspection(video_id=video.id, status="FAILED")
         return inspection_repository.create(db, inspection)
@@ -131,6 +139,13 @@ def _persist_frame_analyses(
         fraction = frame_result.frame_index / (total - 1) if total > 1 else 0.0
         estimated_km = segment.km_start + fraction * km_range
 
+        image_path = None
+        if frame_result.image_path is not None:
+            # Guardado relativo à raiz do projeto (não o path absoluto que o
+            # vision engine usou pra escrever) — é o que vira URL servida
+            # estaticamente pelo backend (ver app/main.py).
+            image_path = Path(frame_result.image_path).relative_to(PROJECT_ROOT).as_posix()
+
         frame_analysis_repository.create(db, FrameAnalysis(
             inspection_id=inspection_id,
             frame_index=frame_result.frame_index,
@@ -138,4 +153,5 @@ def _persist_frame_analyses(
             estimated_km=estimated_km,
             green_percent=frame_result.green_percent,
             priority=frame_result.priority,
+            image_path=image_path,
         ))

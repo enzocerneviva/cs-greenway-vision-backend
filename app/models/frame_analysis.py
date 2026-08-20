@@ -19,3 +19,8 @@ class FrameAnalysis(Base):
     estimated_km = Column(Float, nullable=False)
     green_percent = Column(Float, nullable=False)
     priority = Column(String, nullable=False)
+    # Caminho relativo à raiz do projeto (ex.: "storage/frames/12/0.jpg"),
+    # servido estaticamente — ver app/main.py. Nulo se a imagem não foi
+    # persistida (não deveria acontecer em uso normal, mas o campo é opcional
+    # por segurança).
+    image_path = Column(String, nullable=True)

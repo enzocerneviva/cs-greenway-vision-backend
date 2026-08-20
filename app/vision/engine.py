@@ -6,6 +6,7 @@
 # do backend — recebe um caminho de vídeo, devolve um resultado.
 
 from pathlib import Path
+from typing import Optional
 
 import cv2
 import joblib
@@ -44,7 +45,21 @@ def _classify_frame(frame) -> str:
     return _classifier.predict([embedding])[0]
 
 
-def analyze(file_path: str, media_type: str = "video") -> AnalysisResult:
+def analyze(
+    file_path: str,
+    media_type: str = "video",
+    frame_image_dir: Optional[Path] = None,
+) -> AnalysisResult:
+    """
+    frame_image_dir, se passado, faz cada frame classificado ser salvo como
+    JPEG nesse diretório ({frame_index}.jpg) — usado pra dar suporte à
+    visualização de frame analysis no frontend. Opcional porque o vision
+    engine deve continuar utilizável (e testável) sem depender de onde o
+    backend guarda arquivos.
+    """
+    if frame_image_dir is not None:
+        frame_image_dir.mkdir(parents=True, exist_ok=True)
+
     if media_type == "image":
         frame = cv2.imread(file_path)
         if frame is None:
@@ -69,11 +84,18 @@ def analyze(file_path: str, media_type: str = "video") -> AnalysisResult:
         else:
             priority = "LOW"
 
+        image_path = None
+        if frame_image_dir is not None:
+            frame_file = frame_image_dir / f"{index}.jpg"
+            cv2.imwrite(str(frame_file), frame)
+            image_path = frame_file.as_posix()
+
         frame_results.append(FrameResult(
             frame_index=index,
             timestamp_seconds=timestamp_seconds,
             green_percent=green_percent,
             priority=priority,
+            image_path=image_path,
         ))
 
     worst_priority = max(frame_results, key=lambda fr: _PRIORITY_SEVERITY[fr.priority]).priority

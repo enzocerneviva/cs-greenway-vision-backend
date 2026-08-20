@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel
 
 
@@ -7,6 +8,7 @@ class FrameAnalysisResponse(BaseModel):
     estimated_km: float
     green_percent: float
     priority: str
+    image_path: Optional[str]
 
     class Config:
         from_attributes = True
