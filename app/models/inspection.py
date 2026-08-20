@@ -21,3 +21,8 @@ class Inspection(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     frame_analyses = relationship("FrameAnalysis", order_by="FrameAnalysis.frame_index")
+    video = relationship("Video")
+
+    @property
+    def segment_id(self) -> int:
+        return self.video.segment_id

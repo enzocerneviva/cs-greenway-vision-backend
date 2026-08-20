@@ -8,6 +8,7 @@ from app.schemas.frame_analysis import FrameAnalysisResponse
 class InspectionResponse(BaseModel):
     id: int
     video_id: int
+    segment_id: int
     measurement_value: Optional[float]
     measurement_unit: Optional[str]
     priority: Optional[str]
