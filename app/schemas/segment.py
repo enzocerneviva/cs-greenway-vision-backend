@@ -6,7 +6,7 @@ class SegmentCreate(BaseModel):
     road_id: int
     km_start: float
     km_end: float
-    direction: str
+    direction: Optional[str] = None
     lat_start: Optional[float] = None
     lng_start: Optional[float] = None
     lat_end: Optional[float] = None
@@ -25,7 +25,7 @@ class SegmentResponse(BaseModel):
     road_id: int
     km_start: float
     km_end: float
-    direction: str
+    direction: Optional[str]
     lat_start: Optional[float]
     lng_start: Optional[float]
     lat_end: Optional[float]

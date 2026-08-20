@@ -9,7 +9,7 @@ class Segment(Base):
     road_id = Column(Integer, ForeignKey("roads.id"), nullable=False)
     km_start = Column(Float, nullable=False)
     km_end = Column(Float, nullable=False)
-    direction = Column(String, nullable=False)  # sentido da pista, ex.: "NORTE"/"SUL"
+    direction = Column(String, nullable=True)  # sentido da pista, ex.: "NORTE"/"SUL" — nem toda rodovia tem isso definido
 
     # Ponta a ponta do trecho, usado pra desenhar uma linha reta no mapa —
     # não é o traçado real da via, é uma aproximação v1. Nulo em trechos

@@ -12,7 +12,7 @@ router = APIRouter(prefix="/roads", tags=["roads"])
 
 @router.post("", response_model=RoadResponse)
 def create_road(payload: RoadCreate, db: Session = Depends(get_db)):
-    road = Road(name=payload.name)
+    road = Road(name=payload.name, concessionaire=payload.concessionaire)
     return road_repository.create(db, road)
 
 

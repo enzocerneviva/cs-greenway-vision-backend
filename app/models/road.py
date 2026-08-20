@@ -7,3 +7,4 @@ class Road(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
+    concessionaire = Column(String, nullable=True)  # ex.: "AutoBān", "ViaOeste"
