@@ -29,6 +29,7 @@ def create_inspection(
     file: UploadFile = File(...),
     km_start: Optional[float] = Form(None),
     km_end: Optional[float] = Form(None),
+    direction: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     """
@@ -39,7 +40,11 @@ def create_inspection(
     vez de km_start/km_end do Segment inteiro. Foto usa km_start == km_end
     (um único ponto). Se nenhum dos dois vier, mantém o comportamento
     antigo: interpola sobre o trecho inteiro.
+
+    direction: sentido da pista ("CAPITAL" ou "INTERIOR") — necessário pra
+    saber de qual lado da rodovia é a inspeção, já que ida e volta podem
+    ter condições de vegetação bem diferentes.
     """
     return inspection_service.create_inspection(
-        db, segment_id, file, km_start=km_start, km_end=km_end
+        db, segment_id, file, km_start=km_start, km_end=km_end, direction=direction
     )

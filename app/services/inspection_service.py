@@ -89,6 +89,7 @@ def create_inspection(
     file: UploadFile,
     km_start: float | None = None,
     km_end: float | None = None,
+    direction: str | None = None,
 ) -> Inspection:
     segment = segment_repository.get_by_id(db, segment_id)
     if segment is None:
@@ -121,6 +122,7 @@ def create_inspection(
         measurement_unit=result.measurement_unit,
         priority=result.priority,
         model_version=result.model_version,
+        direction=direction,
         status="DONE",
         analyzed_at=datetime.now(timezone.utc),
     )

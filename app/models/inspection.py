@@ -18,6 +18,11 @@ class Inspection(Base):
     status = Column(String, nullable=False)  # DONE / FAILED
     analyzed_at = Column(DateTime, nullable=True)
 
+    # De qual pista/sentido é a inspeção — "CAPITAL" (rumo a São Paulo) ou
+    # "INTERIOR" (rumo ao interior), convenção usada nas rodovias estaduais
+    # paulistas. Nulo em inspeções antigas, sem essa informação.
+    direction = Column(String, nullable=True)
+
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     frame_analyses = relationship("FrameAnalysis", order_by="FrameAnalysis.frame_index")

@@ -13,6 +13,7 @@ class InspectionResponse(BaseModel):
     measurement_unit: Optional[str]
     priority: Optional[str]
     model_version: Optional[str]
+    direction: Optional[str]
     status: str
     analyzed_at: Optional[datetime]
     created_at: datetime
