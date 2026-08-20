@@ -10,9 +10,13 @@ Importante: isso é uma aproximação, não georreferenciamento oficial.
 - Rodovia com pista dupla vira duas linhas paralelas no OSM (uma por
   sentido) — a reconstrução abaixo escolhe uma única cadeia contínua
   (o "caminho mais longo" no grafo de vias conectadas), não as duas.
-- A posição de um km específico ao longo do traçado é calculada por
-  distância proporcional (mesmo princípio já usado pra posicionar frame
-  dentro de um Segment), não por marco quilométrico oficial.
+- O traçado encontrado pode ser bem mais longo que o trecho realmente
+  concedido (ex.: a Anhanguera no OSM inclui o corredor todo, ~450km até
+  divisa com MG, mesmo a concessão registrada sendo só km 11-158) — por
+  isso a posição de um km é calculada como distância real acumulada a
+  partir do início do traçado (tratado como km 0, ver SAO_PAULO_REF),
+  não esticando o traçado inteiro proporcionalmente ao intervalo do
+  Segment. Ainda é aproximação, não marco quilométrico oficial.
 
 Se a busca falhar ou não achar nada, retorna None — cadastro de rodovia
 nunca deve falhar por causa disso (é um enriquecimento, não requisito).
@@ -23,12 +27,22 @@ from typing import Optional
 import requests
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
-OVERPASS_TIMEOUT_SECONDS = 25
+# Regex em "ref" (necessário pra achar refs compostas tipo "SP-330;BR-050")
+# é bem mais lento pro Overpass processar que igualdade exata — precisa de
+# mais tempo pra rodovias com muitas vias.
+OVERPASS_TIMEOUT_SECONDS = 75
 # Overpass rejeita o User-Agent padrão do requests (bloqueio de bot
 # genérico) com 406 — precisa de um User-Agent identificável.
 OVERPASS_HEADERS = {"User-Agent": "GreenWayVision/0.1 (academic project, road geometry lookup)"}
 
 Point = tuple[float, float]
+
+# Praça da Sé, São Paulo — referência pra decidir qual ponta do traçado
+# reconstruído é "km 0". A numeração das rodovias estaduais paulistas quase
+# sempre começa perto da capital, então a ponta mais próxima daqui vira o
+# início do traçado. Aproximação, não é o marco quilométrico oficial —
+# mas é consistente com o resto do projeto (ver estimated_km no FrameAnalysis).
+SAO_PAULO_REF: Point = (-23.5505, -46.6333)
 
 
 def _extract_route_ref(road_name: str) -> Optional[str]:
@@ -39,11 +53,14 @@ def _extract_route_ref(road_name: str) -> Optional[str]:
 
 
 def _query_overpass(ref: str) -> list[list[Point]]:
+    # "~" (contém/regex) em vez de "=" (igual) — rodovias co-assinaladas
+    # aparecem no OSM com refs compostas, ex.: ref="SP-330;BR-050" pra
+    # Anhanguera. Igualdade exata nunca bate com isso.
     query = f"""
     [out:json][timeout:{OVERPASS_TIMEOUT_SECONDS}];
     area["ISO3166-1"="BR"][admin_level=2]->.br;
     (
-      way["ref"="{ref}"]["highway"](area.br);
+      way["ref"~"(^|;){re.escape(ref)}($|;)"]["highway"](area.br);
     );
     out geom;
     """
@@ -199,6 +216,11 @@ def fetch_road_geometry(road_name: str) -> Optional[list[Point]]:
         # representar uma rodovia — provavelmente achamos só um trevo isolado
         if _way_length(path) * 111 < 5:
             return None
+
+        # orienta pra ponta mais próxima de São Paulo vir primeiro (km "0")
+        if _distance(path[-1], SAO_PAULO_REF) < _distance(path[0], SAO_PAULO_REF):
+            path = list(reversed(path))
+
         return path
     except Exception:
         # Overpass fora do ar, timeout, rodovia não encontrada, etc. —

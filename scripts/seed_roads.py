@@ -6,6 +6,7 @@ Idempotente por nome de rodovia (não duplica se já existir).
 """
 from app.database.session import SessionLocal
 from app.models import Road, Segment
+from app.services import geocoding_service
 
 # (nome, concessionária, km_start, km_end)
 ROADS = [
@@ -24,6 +25,7 @@ def seed():
                 continue
 
             road = Road(name=name, concessionaire=concessionaire)
+            road.geometry = geocoding_service.fetch_road_geometry(name)
             db.add(road)
             db.commit()
             db.refresh(road)
