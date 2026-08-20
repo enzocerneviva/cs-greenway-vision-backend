@@ -10,3 +10,8 @@ vision_playground/frames_extraidos/
 
 # Imagens baixadas do Mapillary (regeneraveis via extraction.py)
 data/mapillary/images/
+
+# Fotos pessoais de teste de campo e resultados gerados (nao sao dataset
+# oficial do projeto) - so os scripts ficam versionados
+data/images-real-road/*
+!data/images-real-road/*.py
