@@ -17,3 +17,8 @@ def list_by_inspection(db: Session, inspection_id: int) -> List[FrameAnalysis]:
         .order_by(FrameAnalysis.frame_index)
         .all()
     )
+
+
+def delete_all(db: Session) -> None:
+    db.query(FrameAnalysis).delete()
+    db.commit()

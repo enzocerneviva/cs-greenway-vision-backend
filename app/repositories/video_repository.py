@@ -16,3 +16,8 @@ def get_by_id(db: Session, video_id: int) -> Optional[Video]:
 
 def list_all(db: Session) -> List[Video]:
     return db.query(Video).all()
+
+
+def delete_all(db: Session) -> None:
+    db.query(Video).delete()
+    db.commit()

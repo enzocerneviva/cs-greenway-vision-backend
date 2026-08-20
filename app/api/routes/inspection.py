@@ -48,3 +48,14 @@ def create_inspection(
     return inspection_service.create_inspection(
         db, segment_id, file, km_start=km_start, km_end=km_end, direction=direction
     )
+
+
+@router.delete("", status_code=204)
+def reset_inspections(db: Session = Depends(get_db)):
+    """
+    Apaga todas as inspeções/frame_analyses/vídeos (e os arquivos em
+    storage/) — não mexe em roads/segments. Uso previsto: voltar o
+    ambiente de testes pro estado "tudo cinza, sem inspeção" sem precisar
+    recadastrar as rodovias.
+    """
+    inspection_service.reset_all_analyses(db)

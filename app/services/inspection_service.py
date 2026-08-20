@@ -1,4 +1,5 @@
 import os
+import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -184,3 +185,24 @@ def _persist_frame_analyses(
             priority=frame_result.priority,
             image_path=image_path,
         ))
+
+
+def reset_all_analyses(db: Session) -> None:
+    """
+    Apaga todas as inspeções, frame_analyses e vídeos (e os arquivos de
+    mídia correspondentes em storage/) — sem tocar em roads/segments. Feito
+    pra testes: voltar o mapa/faixa de blocos pro estado "tudo cinza, sem
+    inspeção" sem precisar recadastrar as rodovias.
+    """
+    frame_analysis_repository.delete_all(db)
+    inspection_repository.delete_all(db)
+    video_repository.delete_all(db)
+
+    for storage_dir in (VIDEO_STORAGE_DIR, IMAGE_STORAGE_DIR, FRAME_STORAGE_DIR):
+        if not storage_dir.exists():
+            continue
+        for entry in storage_dir.iterdir():
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                entry.unlink(missing_ok=True)

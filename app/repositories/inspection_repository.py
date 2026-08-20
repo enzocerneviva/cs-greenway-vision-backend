@@ -16,3 +16,8 @@ def get_by_id(db: Session, inspection_id: int) -> Optional[Inspection]:
 
 def list_all(db: Session) -> List[Inspection]:
     return db.query(Inspection).all()
+
+
+def delete_all(db: Session) -> None:
+    db.query(Inspection).delete()
+    db.commit()
