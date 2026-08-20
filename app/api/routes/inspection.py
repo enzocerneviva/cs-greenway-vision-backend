@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,14 @@ def get_inspection(inspection_id: int, db: Session = Depends(get_db)):
 def create_inspection(
     segment_id: int = Form(...),
     file: UploadFile = File(...),
+    km: Optional[float] = Form(None),
     db: Session = Depends(get_db),
 ):
-    return inspection_service.create_inspection(db, segment_id, file)
+    """
+    km: posição exata (opcional) que o arquivo representa — usado sobretudo
+    pra upload de foto avulsa, onde não faz sentido interpolar a posição
+    entre km_start/km_end do trecho (não há sequência de frames pra
+    interpolar sobre). Ignorado silenciosamente pra vídeo, que continua
+    usando a interpolação por frame.
+    """
+    return inspection_service.create_inspection(db, segment_id, file, km=km)

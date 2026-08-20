@@ -83,7 +83,9 @@ def save_inspection_media(file: UploadFile) -> tuple[str, str]:
     return destination_path, media_type
 
 
-def create_inspection(db: Session, segment_id: int, file: UploadFile) -> Inspection:
+def create_inspection(
+    db: Session, segment_id: int, file: UploadFile, km: float | None = None
+) -> Inspection:
     segment = segment_repository.get_by_id(db, segment_id)
     if segment is None:
         raise HTTPException(status_code=404, detail="Segment not found")
@@ -120,24 +122,37 @@ def create_inspection(db: Session, segment_id: int, file: UploadFile) -> Inspect
     )
     inspection = inspection_repository.create(db, inspection)
 
-    _persist_frame_analyses(db, inspection.id, segment, result.frame_results)
+    # km só faz sentido pra foto avulsa (um frame só, sem sequência pra
+    # interpolar posição) — silenciosamente ignorado se vier junto de vídeo.
+    override_km = km if media_type == "image" else None
+    _persist_frame_analyses(db, inspection.id, segment, result.frame_results, override_km=override_km)
 
     return inspection
 
 
 def _persist_frame_analyses(
-    db: Session, inspection_id: int, segment: Segment, frame_results: list[FrameResult]
+    db: Session,
+    inspection_id: int,
+    segment: Segment,
+    frame_results: list[FrameResult],
+    override_km: float | None = None,
 ) -> None:
     """
-    Salva o detalhe por frame, com a posição estimada (interpolação linear
-    entre km_start/km_end do Segment — aproximação v1, não é GPS real).
+    Salva o detalhe por frame. A posição de cada frame vem de:
+    - override_km, se informado (upload de foto representando um km exato,
+      escolhido pelo usuário — não dá pra interpolar com 1 frame só);
+    - senão, interpolação linear entre km_start/km_end do Segment
+      (aproximação v1, não é GPS real).
     """
     total = len(frame_results)
     km_range = segment.km_end - segment.km_start
 
     for frame_result in frame_results:
-        fraction = frame_result.frame_index / (total - 1) if total > 1 else 0.0
-        estimated_km = segment.km_start + fraction * km_range
+        if override_km is not None:
+            estimated_km = override_km
+        else:
+            fraction = frame_result.frame_index / (total - 1) if total > 1 else 0.0
+            estimated_km = segment.km_start + fraction * km_range
 
         image_path = None
         if frame_result.image_path is not None:
