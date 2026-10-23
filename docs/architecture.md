@@ -162,7 +162,9 @@ SQLAlchemy Session
 
 Sem essa camada, cada Service (ou rota) precisaria montar suas próprias queries diretamente, espalhando conhecimento sobre a estrutura do banco pela aplicação. Com o Repository, o Service pede o dado (`inspection_repository.get_by_id(db, id)`) sem saber como a busca é feita internamente.
 
-Cada entidade (`Road`, `Segment`, `Video`, `Inspection`) tem seu próprio módulo de repository em `app/repositories/`, com operações básicas (`create`, `get_by_id`, `list_all`).
+Cada entidade (`Road`, `Segment`, `Video`, `Inspection`, `FrameAnalysis`) tem seu próprio módulo de repository em `app/repositories/`, com operações básicas (`create`, `get_by_id`, `list_all`, `delete_all` quando aplicável).
+
+**Ponto de atenção conhecido:** hoje cada `create()` faz `commit()` próprio, então a criação de uma inspeção não é atômica. A correção (o service passa a fazer um único `commit`) está planejada no item 6 de `docs/plans/plano-v2.md`.
 
 ---
 
@@ -252,6 +254,8 @@ HIGH
 
 Os valores devem ser centralizados em uma regra de negócio, evitando que sejam espalhados pelo código.
 
+> **Estado atual:** esta etapa (medição em cm + regra de classificação) é o desenho de referência, mas **não está ativa**. Com câmera frontal sem calibração, o v1 classifica direto da imagem (ver §8.1). A regra em cm continua em `app/services/classification.py`, sem uso, aguardando uma fonte de medição calibrada.
+
 ---
 
 # 8. Contrato Vision Engine
@@ -262,18 +266,29 @@ Entrada:
 
 ```python
 from app.vision import engine as vision_engine
-vision_engine.analyze(video_path)
+vision_engine.analyze(file_path, media_type="video", frame_image_dir=None)
 ```
 
-Saída (`AnalysisResult`):
+`media_type` é `"video"` ou `"image"`. `frame_image_dir`, se informado, faz o engine salvar cada frame analisado como JPEG nesse diretório (usado pelo frontend para exibir os frames).
+
+Saída (`AnalysisResult` e `FrameResult`, em `app/vision/analysis_result.py`):
 
 ```python
 @dataclass
+class FrameResult:
+    frame_index: int
+    timestamp_seconds: float
+    green_percent: float
+    priority: str
+    image_path: Optional[str] = None
+
+@dataclass
 class AnalysisResult:
-    priority: str                          # LOW / MEDIUM / HIGH
-    model_version: str
+    priority: str                          # LOW / MEDIUM / HIGH — pior caso entre os frames
+    model_version: str                     # "mapillary-v1-randomforest"
     measurement_value: Optional[float] = None
     measurement_unit: Optional[str] = None
+    frame_results: List[FrameResult] = field(default_factory=list)
 ```
 
 **Nota importante sobre `measurement_value`**: o classificador v1 (baseado em imagens de referência sem calibração de câmera) prevê a `priority` diretamente a partir da imagem — ele não produz uma medida física real em centímetros. Por isso `measurement_value`/`measurement_unit` ficam `None` nesse caminho. `classify_priority()` (`app/services/classification.py`), que aplica a regra oficial baseada em cm, permanece centralizado e será usado quando existir uma fonte real de medição calibrada (ex.: câmera lateral).
@@ -291,21 +306,28 @@ Esses detalhes pertencem ao Vision Engine.
 ## 8.1 Implementação atual (v1 — baseline)
 
 ```text
-Vídeo
+Vídeo (ou foto = 1 frame)
   ↓
 extrair_frames()               → app/vision/frame_extractor.py
+  (1 frame por segundo)
   ↓
 pré-filtro por cor (HSV)       → app/vision/vegetation_detector.py
-  (descarta frames sem vegetação relevante, barato de rodar)
+  (% de pixels verdes; < 5 % → frame é LOW direto, sem passar pelo modelo)
   ↓
-classificador                  → hoje MOCKADO (app/vision/engine.py);
-                                  será um classificador scikit-learn
-                                  treinado sobre embeddings extraídos
-                                  por uma CNN pré-treinada (transfer
-                                  learning, sem treinar a rede do zero)
+embedding (MobileNetV2)        → app/vision/feature_extractor_cnn.py
+  (rede pré-treinada no ImageNet, só inferência; vetor de 1280 números)
   ↓
-AnalysisResult
+classificador RandomForest     → data/mapillary/model/classifier.joblib
+  (treinado em data/mapillary/train_classifier.py)
+  ↓
+agregação: pior caso entre os frames
+  ↓
+AnalysisResult (+ FrameResult por frame)
 ```
+
+O modelo (`model_version = "mapillary-v1-randomforest"`) foi treinado com 648 imagens rotuladas do Mapillary. É um baseline aproximado: acurácia de ~88,5 % em 130 imagens de teste, mas a classe MEDIUM tem recall baixo (3 de 13) por desbalanceamento do dataset. O plano de melhoria está no item 9 de `docs/plans/plano-v2.md`.
+
+`measurement_value` fica `None`: sem calibração de câmera, uma imagem monocular não permite recuperar tamanho real em cm.
 
 ---
 
@@ -343,27 +365,38 @@ Representam entidades persistidas (`app/models/`). O modelo de dados reflete o d
 
 ```text
 Road (rodovia)
-  id, name
+  id, name, concessionaire, geometry_json (traçado do OpenStreetMap)
         │
         ▼
-Segment (trecho da rodovia, com sentido/direção)
-  id, road_id, km_start, km_end, direction
+Segment (trecho da rodovia)
+  id, road_id, km_start, km_end, direction (opcional),
+  lat_start, lng_start, lat_end, lng_end (opcionais)
         │
         ▼
-Video (o vídeo enviado numa inspeção)
-  id, segment_id, file_path, original_filename, uploaded_at
+Video (o arquivo enviado numa inspeção — vídeo ou foto)
+  id, segment_id, file_path, original_filename, media_type ("video"/"image"), uploaded_at
         │
         ▼
 Inspection (resultado de UMA análise — vínculo 1:1 com Video)
   id, video_id (único), measurement_value, measurement_unit,
-  priority, model_version, status (DONE/FAILED), analyzed_at, created_at
+  priority, model_version, status (DONE/FAILED), analyzed_at, created_at,
+  direction ("CAPITAL"/"INTERIOR", sentido da pista inspecionada)
+        │
+        ▼
+FrameAnalysis (resultado por frame — N por Inspection)
+  id, inspection_id, frame_index, timestamp_seconds,
+  estimated_km, green_percent, priority, image_path
 ```
 
-`Road`/`Segment` existem como cadastro relativamente estável. `Video` nasce no upload. `Inspection` nasce (ou falha) na análise — por isso são tabelas separadas: cada uma tem um ciclo de vida diferente.
+`Road`/`Segment` existem como cadastro relativamente estável. `Video` nasce no upload. `Inspection` nasce (ou falha) na análise — por isso são tabelas separadas: cada uma tem um ciclo de vida diferente. `FrameAnalysis` guarda o detalhe de cada frame e a posição estimada.
+
+**`estimated_km` é aproximação.** Cada frame recebe uma posição por interpolação linear do índice entre `km_start` e `km_end` (informados no upload; se omitidos, os do `Segment` inteiro). Não é GPS. O intervalo é semiaberto `[km_start, km_end)`; o último frame nunca cai exatamente em `km_end`.
+
+**Banco e migrações.** As tabelas são criadas com `Base.metadata.create_all()` na subida da aplicação, o que **não altera** tabelas existentes. Adicionar colunas exige um `ALTER TABLE` manual no banco (decisão do item 1 de `docs/plans/plano-v2.md`; o Alembic fica para quando houver um segundo ambiente) ou recriar o banco.
 
 ## Schemas
 
-Representam os contratos utilizados pela API (`app/schemas/`): `RoadCreate`/`RoadResponse`, `SegmentCreate`/`SegmentResponse`, `InspectionResponse`.
+Representam os contratos utilizados pela API (`app/schemas/`): `RoadCreate`/`RoadResponse`, `SegmentCreate`/`SegmentLocationUpdate`/`SegmentResponse`, `InspectionResponse` e `FrameAnalysisResponse`.
 
 Essa separação evita acoplar diretamente a estrutura interna do banco aos contratos públicos da API.
 
@@ -371,7 +404,7 @@ Essa separação evita acoplar diretamente a estrutura interna do banco aos cont
 
 # 11. Fluxo completo de uma inspeção
 
-Implementado (`POST /inspections`, multipart: `segment_id` + vídeo):
+Implementado (`POST /inspections`, multipart: `segment_id` + arquivo de vídeo ou foto, opcionais `km_start`, `km_end`, `direction`). A análise é **síncrona**: a resposta só volta depois do processamento (ver item 8 de `docs/plans/plano-v2.md`).
 
 ```text
                  FRONTEND
@@ -385,21 +418,25 @@ Implementado (`POST /inspections`, multipart: `segment_id` + vídeo):
        INSPECTION SERVICE (app/services/inspection_service.py)
                     │
                     │ 1. valida que o Segment existe (404 se não)
-                    │ 2. salva o vídeo em disco (storage/videos/)
+                    │ 2. valida tipo/tamanho e salva o arquivo em disco
+                    │    (storage/videos/ ou storage/images/, nome UUID)
                     │ 3. persiste o Video (via Repository)
                     ▼
               VISION ENGINE (app/vision/engine.py)
                     │
                     ▼
-                VIDEO FRAMES  →  PRÉ-FILTRO (HSV)  →  CLASSIFICAÇÃO
+          FRAMES  →  PRÉ-FILTRO (HSV)  →  EMBEDDING (CNN)  →  RANDOMFOREST
                     │
                     ▼
-              ANALYSIS RESULT
+              ANALYSIS RESULT (+ resultado por frame; JPEGs em storage/frames/)
                     │
           ┌─────────┴─────────┐
           │ sucesso            │ exceção
           ▼                    ▼
    Inspection(status=DONE)  Inspection(status=FAILED)
+   + FrameAnalysis por frame   (sem motivo registrado hoje —
+     (km estimado por           previsto: failure_reason)
+      interpolação)
                     │
                     ▼
        persiste via Repository → DATABASE
@@ -481,7 +518,7 @@ Antes da implementação paralela, a equipe deve definir:
 
 Isso permite que cada componente seja desenvolvido e testado independentemente.
 
-Durante o desenvolvimento inicial, o backend poderá utilizar um resultado simulado enquanto o Vision Engine ainda estiver sendo desenvolvido.
+Durante o desenvolvimento inicial, o backend utilizou um resultado simulado enquanto o Vision Engine era desenvolvido. Isso já foi substituído pelo modelo real (§8.1); o exemplo abaixo é histórico e não reflete o contrato atual (que não inclui `measurement` em cm).
 
 Exemplo:
 
