@@ -16,6 +16,8 @@ class Inspection(Base):
 
     model_version = Column(String, nullable=True)
     status = Column(String, nullable=False)  # DONE / FAILED
+    # Motivo curto da falha, só preenchido quando status = FAILED.
+    failure_reason = Column(String, nullable=True)
     analyzed_at = Column(DateTime, nullable=True)
 
     # De qual pista/sentido é a inspeção — "CAPITAL" (rumo a São Paulo) ou

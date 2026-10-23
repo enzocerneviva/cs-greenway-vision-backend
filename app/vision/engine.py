@@ -12,7 +12,7 @@ import cv2
 import joblib
 from PIL import Image
 
-from app.vision.analysis_result import AnalysisResult, FrameResult
+from app.vision.analysis_result import AnalysisError, AnalysisResult, FrameResult
 from app.vision.feature_extractor_cnn import extract_embedding
 from app.vision.frame_extractor import extrair_frames
 from app.vision.vegetation_detector import detectar_vegetacao
@@ -63,26 +63,32 @@ def analyze(
     if media_type == "image":
         frame = cv2.imread(file_path)
         if frame is None:
-            raise ValueError(f"Não foi possível abrir a imagem: {file_path}")
+            raise AnalysisError("Não foi possível abrir a imagem (arquivo inválido ou corrompido)")
         # imagem não tem timestamp real — é um único ponto, não uma sequência no tempo
         frames = [(frame, 0.0)]
     else:
-        frames = extrair_frames(file_path)
+        try:
+            frames = extrair_frames(file_path)
+        except ValueError as exc:
+            raise AnalysisError("Não foi possível abrir o vídeo (arquivo inválido ou corrompido)") from exc
 
     if not frames:
-        raise ValueError(f"Nenhum frame foi extraído do vídeo: {file_path}")
+        raise AnalysisError("Nenhum frame foi extraído do vídeo")
 
     frame_results = []
     for index, (frame, timestamp_seconds) in enumerate(frames):
-        green_percent = detectar_vegetacao(frame)
+        try:
+            green_percent = detectar_vegetacao(frame)
 
-        # Frame sem verde suficiente não passa pelo classificador — LOW por
-        # convenção (mesmo raciocínio de antes), mas ainda vira um ponto no
-        # rastro, pra a visualização por frame ficar contínua.
-        if green_percent >= PRE_FILTER_MIN_GREEN_PERCENT:
-            priority = _classify_frame(frame)
-        else:
-            priority = "LOW"
+            # Frame sem verde suficiente não passa pelo classificador — LOW por
+            # convenção (mesmo raciocínio de antes), mas ainda vira um ponto no
+            # rastro, pra a visualização por frame ficar contínua.
+            if green_percent >= PRE_FILTER_MIN_GREEN_PERCENT:
+                priority = _classify_frame(frame)
+            else:
+                priority = "LOW"
+        except (cv2.error, RuntimeError) as exc:
+            raise AnalysisError(f"Falha ao processar o frame {index}") from exc
 
         image_path = None
         if frame_image_dir is not None:

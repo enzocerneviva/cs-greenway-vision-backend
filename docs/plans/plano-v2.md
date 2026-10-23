@@ -80,42 +80,53 @@ Valem para todas as partes; já foram combinadas com o frontend.
 
 Quatro itens pequenos que corrigem o que o frontend já sofre hoje e preparam todo o resto.
 
-## Item 1 — Mudanças no esquema do banco (sem Alembic)
+## Item 1 — Migrações do banco com Alembic
 
-**O problema.** Hoje o `main.py` chama `Base.metadata.create_all()`, que só cria
-tabelas que **não existem**. Tabela nova (agenda, descartes de sugestão) aparece
-sozinha. Mas uma **coluna nova em tabela existente** (como `failure_reason`) não: o
-`create_all` não faz nada e o código quebra com "no such column".
+**O que é.** Alembic é uma ferramenta que guarda o **histórico de mudanças na estrutura
+das tabelas** em arquivos versionados no git (`alembic/versions/`) e sabe aplicá-los em
+qualquer banco. **Não substitui o banco**: o SQLite e o `greenway.db` continuam os mesmos.
 
-**Decisão desta versão.** Sem ferramenta de migração. Cada coluna nova entra com um
-`ALTER TABLE` manual no `greenway.db`, uma única vez, com cópia de segurança antes:
+**O que ele resolve e o que não resolve.** Não corrige nenhum bug da aplicação. Resolve
+um problema de processo: o `create_all()` só cria tabelas que **não existem**, então uma
+coluna nova em tabela existente (como `failure_reason`) exigiria um `ALTER TABLE` feito
+à mão em cada banco. Com um banco só, isso é tolerável; com um segundo ambiente (outra
+pessoa rodando o backend, um banco novo, o PostgreSQL) cada um repetiria a lista de
+`ALTER` na ordem certa. Com o Alembic, o mesmo comando chega ao mesmo esquema.
 
-```python
-import sqlite3
-c = sqlite3.connect("greenway.db")
-c.execute("ALTER TABLE inspections ADD COLUMN failure_reason VARCHAR")
-c.commit()
+**Como funciona.**
+```text
+você muda o model (app/models/inspection.py)
+        ↓
+alembic revision --autogenerate -m "descrição"
+        → compara os models com o banco e GERA um arquivo em alembic/versions/ (revise-o)
+        ↓
+alembic upgrade head
+        → aplica as migrações pendentes no banco; uma tabela interna (alembic_version)
+          guarda qual foi a última, então rodar de novo não repete nada
 ```
+O Alembic **não é automático**: nada acontece ao subir o uvicorn. Se você esquecer o
+`upgrade head`, a API sobe, mas falha ao usar a coluna nova ("no such column").
 
-No SQLite, adicionar uma coluna que aceita `NULL` é uma operação simples e as linhas
-existentes continuam intactas (a coluna nova fica `NULL` nelas).
+**Como está configurado.**
+- `alembic/env.py` aponta para os models (`Base.metadata`) e para a **mesma URL de banco**
+  da aplicação. `alembic -x url=sqlite:///outro.db upgrade head` aplica em outro arquivo.
+- `0001_esquema_inicial` descreve o esquema atual completo (5 tabelas, incluindo
+  `failure_reason`). No banco que já existia, ela **não foi executada**: foi só marcada
+  como aplicada (`alembic stamp head`), então nenhum dado mudou. Um banco novo recebe o
+  esquema inteiro com um único `alembic upgrade head`.
+- O `main.py` **não cria mais tabelas** ao subir. Antes de rodar a API em um banco novo:
+  `alembic upgrade head`, e só depois o seed.
+- O modo `batch` está ligado (`render_as_batch`): o SQLite não altera nem remove coluna
+  diretamente, e o Alembic recria a tabela por baixo quando for preciso. Adicionar coluna
+  que aceita `NULL` é simples.
 
-**Colunas novas previstas neste plano:**
-- `inspections.failure_reason` (item 3);
+**Colunas novas previstas neste plano** (cada uma vira uma migração):
 - confiança do modelo por frame, em `frame_analyses` (item 9);
 - posição real por frame, em `frame_analyses` (dispositivo de borda).
 
-**Quando reconsiderar o Alembic.** Ferramenta que guarda o histórico de mudanças do
-esquema em arquivos versionados e os reaplica em qualquer banco (`alembic upgrade
-head`). Passa a valer a pena quando houver um segundo ambiente (outra pessoa rodando o
-backend, ou o PostgreSQL) ou muitas mudanças de esquema. Com um único banco local, o
-`ALTER` manual é suficiente.
-
-**Alternativa.** Apagar o `greenway.db` e rodar `scripts/seed_roads.py`: mais simples,
-mas perde as inspeções já gravadas.
-
-**Pronto quando:** a coluna nova existe no `greenway.db` e as inspeções já gravadas
-continuam lá.
+**Pronto quando:** `alembic upgrade head` num banco vazio cria o esquema completo;
+`alembic check` no `greenway.db` atual não acusa diferenças com os models; e as
+inspeções já gravadas continuam lá.
 
 ## Item 2 — Datas sempre em UTC com `Z`
 
@@ -333,7 +344,7 @@ localmente.
 3. **Mais dados** de MEDIUM e LOW (rotular mais imagens do Mapillary e de
    `data/images-real-road/`). É o ganho mais provável.
 4. **Confiança por frame** (`predict_proba`): guardar quanto o modelo "tem certeza".
-   Exige coluna nova (`ALTER` manual, item 1) e permite ao front sinalizar baixa confiança.
+   Exige coluna nova (migração, item 1) e permite ao front sinalizar baixa confiança.
 5. **Agregação do vídeo.** Hoje vale o **pior caso**: um único frame HIGH define o
    vídeo inteiro. Testar alternativas, como HIGH só se pelo menos *k* frames ou uma
    fração dos frames forem HIGH, e comparar com rótulos de vídeo reais.
@@ -537,7 +548,7 @@ antes disso).
 **Quando:** mais de um usuário ou processo usando o banco ao mesmo tempo, ou consultas
 analíticas pesadas. O SQLite atende o uso atual.
 
-**Como:** pré-requisitos são os itens 5 e 6, e a adoção de uma ferramenta de migração (Alembic, ver item 1). Mover a URL do banco para a configuração
+**Como:** pré-requisitos são os itens 1 e 5. Mover a URL do banco para a configuração
 (hoje está fixa em `app/database/session.py`), remover `check_same_thread`, instalar o
 driver (`psycopg`), revisar os tipos (`DateTime(timezone=True)`), migrar os dados com um
 script ou recomeçar do seed, e rodar a suíte de testes contra o Postgres.

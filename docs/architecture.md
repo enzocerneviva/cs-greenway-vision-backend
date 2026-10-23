@@ -392,7 +392,7 @@ FrameAnalysis (resultado por frame — N por Inspection)
 
 **`estimated_km` é aproximação.** Cada frame recebe uma posição por interpolação linear do índice entre `km_start` e `km_end` (informados no upload; se omitidos, os do `Segment` inteiro). Não é GPS. O intervalo é semiaberto `[km_start, km_end)`; o último frame nunca cai exatamente em `km_end`.
 
-**Banco e migrações.** As tabelas são criadas com `Base.metadata.create_all()` na subida da aplicação, o que **não altera** tabelas existentes. Adicionar colunas exige um `ALTER TABLE` manual no banco (decisão do item 1 de `docs/plans/plano-v2.md`; o Alembic fica para quando houver um segundo ambiente) ou recriar o banco.
+**Banco e migrações.** O esquema do banco (tabelas e colunas) é versionado com **Alembic** (`alembic/versions/`). Para criar o banco ou aplicar mudanças pendentes: `alembic upgrade head`. Para mudar o esquema: alterar o model em `app/models/`, gerar a migração (`alembic revision --autogenerate -m "descrição"`), revisar o arquivo gerado e aplicá-lo. A aplicação **não** cria tabelas ao subir (não há mais `create_all` no `main.py`).
 
 ## Schemas
 

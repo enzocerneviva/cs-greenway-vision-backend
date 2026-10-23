@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 import uuid
@@ -7,6 +8,7 @@ from pathlib import Path
 from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
+from app.core.config import MAX_IMAGE_SIZE_BYTES, MAX_VIDEO_SIZE_BYTES
 from app.models import FrameAnalysis, Inspection, Segment, Video
 from app.repositories import (
     frame_analysis_repository,
@@ -15,7 +17,9 @@ from app.repositories import (
     video_repository,
 )
 from app.vision import engine as vision_engine
-from app.vision.analysis_result import FrameResult
+from app.vision.analysis_result import AnalysisError, FrameResult
+
+logger = logging.getLogger(__name__)
 
 # Ancorado na raiz do projeto (não no cwd do processo) — mesmo motivo do
 # path do banco em app/database/session.py.
@@ -31,9 +35,6 @@ ALLOWED_IMAGE_CONTENT_TYPES = {
     "image/jpeg",
     "image/png",
 }
-
-MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB
-MAX_IMAGE_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB — imagem é bem menor que vídeo
 
 VIDEO_STORAGE_DIR = PROJECT_ROOT / "storage" / "videos"
 IMAGE_STORAGE_DIR = PROJECT_ROOT / "storage" / "images"
@@ -107,14 +108,22 @@ def create_inspection(
 
     frame_image_dir = FRAME_STORAGE_DIR / str(video.id)
 
-    # O arquivo já está salvo e o Video persistido nesse ponto. Se a análise
-    # falhar por qualquer motivo (vídeo/imagem corrompido, sem frames
-    # extraíveis, erro do modelo), a inspeção é registrada como FAILED em
-    # vez de perder a referência ao arquivo ou estourar um 500 pro cliente.
+    # O arquivo já está salvo e o Video persistido nesse ponto. Se a mídia não
+    # puder ser analisada (arquivo corrompido, sem frames, falha num frame),
+    # a inspeção é registrada como FAILED, com o motivo, em vez de perder a
+    # referência ao arquivo. Só AnalysisError é tratado aqui: um bug de código
+    # (TypeError, KeyError...) não deve virar um "arquivo inválido" silencioso
+    # — ele sobe como erro 500 e aparece no log do servidor.
     try:
         result = vision_engine.analyze(stored_path, media_type, frame_image_dir=frame_image_dir)
-    except Exception:
-        inspection = Inspection(video_id=video.id, status="FAILED")
+    except AnalysisError as exc:
+        logger.warning("Análise falhou (video_id=%s): %s", video.id, exc, exc_info=True)
+        inspection = Inspection(
+            video_id=video.id,
+            status="FAILED",
+            failure_reason=str(exc)[:300],
+            direction=direction,
+        )
         return inspection_repository.create(db, inspection)
 
     inspection = Inspection(

@@ -2,8 +2,10 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
+from app.core.config import ADMIN_RESET_ENABLED
 from app.database.session import get_db
 from app.schemas.inspection import InspectionResponse
+from app.schemas.types import Direction
 from app.repositories import inspection_repository
 from app.services import inspection_service
 
@@ -29,7 +31,7 @@ def create_inspection(
     file: UploadFile = File(...),
     km_start: Optional[float] = Form(None),
     km_end: Optional[float] = Form(None),
-    direction: Optional[str] = Form(None),
+    direction: Optional[Direction] = Form(None),
     db: Session = Depends(get_db),
 ):
     """
@@ -57,5 +59,13 @@ def reset_inspections(db: Session = Depends(get_db)):
     storage/) — não mexe em roads/segments. Uso previsto: voltar o
     ambiente de testes pro estado "tudo cinza, sem inspeção" sem precisar
     recadastrar as rodovias.
+
+    Só funciona com ADMIN_RESET_ENABLED ligado (app/core/config.py); desligado,
+    responde 403.
     """
+    if not ADMIN_RESET_ENABLED:
+        raise HTTPException(
+            status_code=403,
+            detail="O reset de análises está desativado neste ambiente (ADMIN_RESET_ENABLED=false).",
+        )
     inspection_service.reset_all_analyses(db)

@@ -2,6 +2,15 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 
+class AnalysisError(Exception):
+    """
+    A mídia enviada não pôde ser analisada (arquivo corrompido, sem frames,
+    falha ao processar um frame). É o único erro que o Vision Engine promete
+    levantar por problema na entrada — assim quem chama não precisa conhecer
+    OpenCV nem PyTorch pra decidir o que tratar.
+    """
+
+
 @dataclass
 class FrameResult:
     """Resultado da classificação de um único frame analisado."""

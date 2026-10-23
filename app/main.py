@@ -4,9 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.database.session import Base, engine
-from app import models  # garante que todas as tabelas sejam registradas antes do create_all
-from app.api.routes import road, segment, inspection
+from app.core.config import CORS_ORIGINS
+from app.api.routes import road, segment, inspection, meta
 
 app = FastAPI(
     title="GreenWay Vision API",
@@ -16,12 +15,13 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-Base.metadata.create_all(bind=engine)
+# As tabelas NÃO são mais criadas aqui: quem cria/atualiza o esquema do banco
+# é o Alembic (alembic upgrade head) — ver docs/plans/plano-v2.md, item 1.
 
 # Serve os arquivos de storage/ (vídeos, imagens, frames extraídos) direto
 # por URL — usado hoje pelo frontend pra mostrar as imagens dos frames
@@ -33,6 +33,7 @@ app.mount("/storage", StaticFiles(directory=str(STORAGE_DIR)), name="storage")
 app.include_router(road.router)
 app.include_router(segment.router)
 app.include_router(inspection.router)
+app.include_router(meta.router)
 
 
 @app.get("/health")

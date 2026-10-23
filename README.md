@@ -69,7 +69,7 @@ FastAPI (rotas finas)  →  Services  →  Repositories  →  SQLAlchemy  →  S
 O módulo de visão computacional é desacoplado da API: o motor de visão pode ser testado independentemente do restante da aplicação.
 
 Planos de evolução em `docs/`:
-- `docs/plans/plano-v2.md` — plano da V2, na ordem de execução: base (datas, erros, configuração), confiabilidade, modelo de visão, e Agenda/análise de dados.
+- `docs/plans/plano-v2.md` — plano da V2, na ordem de execução: base (migrações, datas, erros, configuração), confiabilidade, modelo de visão, e Agenda/análise de dados.
 - `docs/dispositivo-de-borda.md` — câmera embarcada e sincronização em lote (fase futura).
 
 ## Estrutura do projeto
@@ -249,9 +249,17 @@ O download é grande (centenas de MB) por causa do PyTorch.
 
 > Na primeira análise de imagem, o `torchvision` baixa os pesos do MobileNetV2 (~14 MB) e os guarda em cache. Isso exige internet apenas nessa primeira vez.
 
-### 3. Rodar a API
+### 3. Criar o banco e rodar a API
 
-Na raiz do projeto, com o venv ativo:
+O esquema do banco (tabelas e colunas) é gerenciado pelo **Alembic**. Na raiz do projeto, com o venv ativo, aplique as migrações:
+
+```powershell
+alembic upgrade head
+```
+
+Isso cria o `greenway.db` (SQLite) com todas as tabelas. Rode de novo sempre que baixar mudanças que incluam arquivos novos em `alembic/versions/`; se não houver nada pendente, não faz nada.
+
+Depois, suba a API:
 
 ```powershell
 uvicorn app.main:app --reload
@@ -261,7 +269,7 @@ uvicorn app.main:app --reload
 - Documentação interativa (Swagger): http://localhost:8000/docs
 - Teste rápido: http://localhost:8000/health deve retornar `{"status":"ok"}`
 
-Na primeira execução o banco SQLite (`greenway.db`) e as tabelas são criados automaticamente, e a pasta `storage/` (vídeos, imagens e frames) também. O classificador treinado já está versionado em `data/mapillary/model/classifier.joblib`, então não é preciso treinar nada.
+A pasta `storage/` (vídeos, imagens e frames) é criada automaticamente na primeira execução. O classificador treinado já está versionado em `data/mapillary/model/classifier.joblib`, então não é preciso treinar nada.
 
 ### 4. Popular as rodovias (seed)
 
@@ -302,7 +310,8 @@ Abra http://localhost:5173. Ele espera a API em `http://localhost:8000` (configu
 | Erro ao instalar `torch==2.13.0+cpu` | Faltou o `--index-url` do passo 2 |
 | Frontend não carrega dados / erro de CORS | API fora do ar, ou frontend rodando em porta diferente de 5173 |
 | Seed falha ao buscar geometria | Sem internet ou OpenStreetMap indisponível — tente novamente |
-| Quer zerar tudo | Pare a API e apague `greenway.db` e `storage/`; eles são recriados na próxima execução |
+| `no such table` / `no such column` | Banco sem as migrações aplicadas — rode `alembic upgrade head` |
+| Quer zerar tudo | Pare a API, apague `greenway.db` e `storage/`, rode `alembic upgrade head` e depois o seed (passo 4) |
 
 ## Desenvolvimento
 
@@ -372,7 +381,7 @@ Especificado e documentado; **não construído fisicamente ainda**.
 
 O plano vigente é `docs/plans/plano-v2.md`:
 
-1. **Base (Parte A)** — fuso com `Z`, `failure_reason`, enums tipados e configuração central.
+1. **Base (Parte A)** — Alembic, fuso com `Z`, `failure_reason`, enums tipados e configuração central.
 2. **Confiabilidade e modelo (Partes B e C)**:
    - transação atômica na criação da inspeção (hoje há um `commit` por frame);
    - controle do crescimento de `storage/`;
