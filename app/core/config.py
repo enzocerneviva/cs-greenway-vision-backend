@@ -21,3 +21,14 @@ MAX_IMAGE_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB — imagem é bem menor que ví
 # Libera o DELETE /inspections (apaga todas as análises). Ligado por padrão
 # em desenvolvimento; desligar com ADMIN_RESET_ENABLED=false.
 ADMIN_RESET_ENABLED = os.environ.get("ADMIN_RESET_ENABLED", "true").lower() == "true"
+
+# Imagem de exibição de cada frame analisado (a que o frontend mostra). O frame
+# em resolução cheia só serve ao modelo e não é guardado.
+FRAME_DISPLAY_MAX_WIDTH = 640
+FRAME_JPEG_QUALITY = 80
+
+# Apaga o arquivo ORIGINAL (vídeo/foto) depois de N dias; os frames reduzidos e
+# os resultados ficam. Desligado por padrão (None) pra nunca apagar nada sem
+# querer — ligar com VIDEO_RETENTION_DAYS=30, por exemplo.
+_retention = os.environ.get("VIDEO_RETENTION_DAYS")
+VIDEO_RETENTION_DAYS = int(_retention) if _retention else None

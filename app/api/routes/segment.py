@@ -26,7 +26,9 @@ def create_segment(payload: SegmentCreate, db: Session = Depends(get_db)):
         lat_end=payload.lat_end,
         lng_end=payload.lng_end,
     )
-    return segment_repository.create(db, segment)
+    segment_repository.create(db, segment)
+    db.commit()
+    return segment
 
 
 @router.get("", response_model=List[SegmentResponse])
@@ -46,4 +48,6 @@ def update_segment_location(
     segment.lng_start = payload.lng_start
     segment.lat_end = payload.lat_end
     segment.lng_end = payload.lng_end
-    return segment_repository.update(db, segment)
+    segment_repository.update(db, segment)
+    db.commit()
+    return segment

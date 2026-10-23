@@ -5,8 +5,7 @@ from app.models import Segment
 
 def create(db: Session, segment: Segment) -> Segment:
     db.add(segment)
-    db.commit()
-    db.refresh(segment)
+    db.flush()  # envia o INSERT (gera o id) sem confirmar a transação
     return segment
 
 
@@ -19,6 +18,5 @@ def list_all(db: Session) -> List[Segment]:
 
 
 def update(db: Session, segment: Segment) -> Segment:
-    db.commit()
-    db.refresh(segment)
+    db.flush()
     return segment

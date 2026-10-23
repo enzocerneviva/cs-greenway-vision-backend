@@ -9,7 +9,7 @@ from pydantic import PlainSerializer
 # em vez de um "string" genérico.
 Priority = Literal["LOW", "MEDIUM", "HIGH"]
 Direction = Literal["CAPITAL", "INTERIOR"]
-InspectionStatus = Literal["DONE", "FAILED"]
+InspectionStatus = Literal["PROCESSING", "DONE", "FAILED"]
 
 
 def _to_utc_iso(value: datetime) -> str:

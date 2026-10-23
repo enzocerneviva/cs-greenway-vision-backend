@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.config import ADMIN_RESET_ENABLED
@@ -25,8 +25,9 @@ def get_inspection(inspection_id: int, db: Session = Depends(get_db)):
     return inspection
 
 
-@router.post("", response_model=InspectionResponse)
+@router.post("", response_model=InspectionResponse, status_code=202)
 def create_inspection(
+    background_tasks: BackgroundTasks,
     segment_id: int = Form(...),
     file: UploadFile = File(...),
     km_start: Optional[float] = Form(None),
@@ -46,10 +47,16 @@ def create_inspection(
     direction: sentido da pista ("CAPITAL" ou "INTERIOR") — necessário pra
     saber de qual lado da rodovia é a inspeção, já que ida e volta podem
     ter condições de vegetação bem diferentes.
+
+    Responde 202 na hora, com a inspeção em status PROCESSING: a análise roda
+    em segundo plano. O cliente acompanha com GET /inspections/{id} até o
+    status virar DONE ou FAILED (e, se FAILED, ler failure_reason).
     """
-    return inspection_service.create_inspection(
-        db, segment_id, file, km_start=km_start, km_end=km_end, direction=direction
+    inspection = inspection_service.accept_inspection(db, segment_id, file, direction=direction)
+    background_tasks.add_task(
+        inspection_service.process_inspection, inspection.id, km_start, km_end
     )
+    return inspection
 
 
 @router.delete("", status_code=204)

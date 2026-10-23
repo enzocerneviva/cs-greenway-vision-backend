@@ -7,6 +7,8 @@
 # Usado tanto pelo treino do classificador (data/mapillary/train_classifier.py)
 # quanto, futuramente, pelo Vision Engine em tempo de inferência real.
 
+from functools import lru_cache
+
 import numpy as np
 import torch
 from PIL import Image
@@ -14,10 +16,18 @@ from torchvision import models, transforms
 
 _device = torch.device("cpu")
 
-_model = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.IMAGENET1K_V1)
-_model.classifier = torch.nn.Identity()  # remove a camada final de classificação do ImageNet -> vira extrator de features
-_model.eval()
-_model.to(_device)
+
+@lru_cache(maxsize=1)
+def _get_model():
+    # Carregado na primeira chamada (e só uma vez), não no import: importar
+    # este módulo fica barato, e quem não classifica nada (testes, subida da
+    # API) não paga o custo de carregar a rede.
+    model = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.IMAGENET1K_V1)
+    model.classifier = torch.nn.Identity()  # remove a camada final de classificação do ImageNet -> vira extrator de features
+    model.eval()
+    model.to(_device)
+    return model
+
 
 _transform = transforms.Compose([
     transforms.Resize(256),
@@ -31,5 +41,5 @@ def extract_embedding(image: Image.Image) -> np.ndarray:
     """Recebe uma imagem PIL em RGB e retorna seu vetor de características (1D)."""
     tensor = _transform(image).unsqueeze(0).to(_device)
     with torch.no_grad():
-        embedding = _model(tensor)
+        embedding = _get_model()(tensor)
     return embedding.squeeze(0).cpu().numpy()

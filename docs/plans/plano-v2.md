@@ -228,6 +228,14 @@ O mesmo custo atrasa a subida da API.
 **Pronto quando:** `pytest` roda em segundos, sem baixar nem carregar modelo, e cobre a
 lista acima.
 
+**Como ficou.** `pytest` com 41 testes em menos de 1 segundo, em `tests/`: banco SQLite em
+memória por teste (`conftest.py`), pastas de storage temporárias e um Vision Engine falso. O
+modelo agora é carregado na primeira classificação (`functools.lru_cache`), e o `torch` só é
+importado quando um frame vai ser classificado (um teste garante que importar o engine não
+carrega o `torch`). O `frame_extractor` rejeita fps inválido com `ValueError`. Consequência:
+o **primeiro** frame classificado depois de subir a API demora alguns segundos a mais (carrega
+a rede); como a análise é em segundo plano (item 8), o usuário não espera por isso.
+
 ## Item 6 — Gravação atômica da inspeção
 
 **O problema.** Cada `repository.create()` faz `commit()` por conta própria. Uma
@@ -257,6 +265,14 @@ db.rollback()   → desfaz tudo desde o último commit
 **Pronto quando:** uma falha simulada no meio da gravação não deixa `Inspection` sem
 frames, e uma requisição faz exatamente 1 commit (verificado em teste).
 
+**Como ficou.** Os repositories só fazem `add`/`flush` (regra em `app/repositories/__init__.py`).
+O upload tem dois passos (item 8): o passo 1 grava `Video` + `Inspection` num commit só; o
+passo 2 grava a `Inspection` final e **todos** os `FrameAnalysis` em um único commit. As rotas
+`/roads` e `/segments`, que não passam por service, fazem o próprio `commit`.
+Decisão sobre o arquivo quando algo falha: se a gravação do passo 1 falha, o arquivo salvo é
+apagado; se a análise falha (`FAILED`), o **original é mantido** (a linha do `Video` ainda o
+referencia) e só as imagens parciais dos frames são apagadas.
+
 ## Item 7 — Controle do espaço em `storage/`
 
 **O problema.** Cada frame analisado é salvo como JPEG em resolução original
@@ -274,6 +290,13 @@ rodovia de 150 km o disco enche.
 
 **Pronto quando:** a medição antes/depois mostra a redução, e inspeções que falham não
 deixam arquivos soltos.
+
+**Como ficou (medido).** Frames de exibição reduzidos a 640 px de largura, JPEG qualidade 80.
+Aplicado a frames reais já guardados: 2560x1440 de 515 KB para 33 KB (94 % menor) e uma foto
+4032x3024 de 2.855 KB para 25 KB (99 % menor). Antes, o `storage/` tinha ~540 KB por frame.
+Retenção: `VIDEO_RETENTION_DAYS` (desligada por padrão) apaga só os **originais** mais antigos,
+verificando que o caminho está dentro de `storage/`; as linhas do banco e os frames reduzidos
+ficam. Arquivos órfãos de gravações desfeitas ou análises falhas são removidos.
 
 ## Item 8 — Análise assíncrona do upload
 
@@ -311,6 +334,16 @@ tempo, o que não é o caso.
 
 **Pronto quando:** o `POST` responde em menos de 1 s, a inspeção passa de `PROCESSING`
 para `DONE` ou `FAILED`, e reiniciar a API não deixa nenhuma `PROCESSING` órfã.
+
+**Como ficou.** `POST /inspections` responde **202** com a inspeção em `PROCESSING`
+(`accept_inspection`) e agenda `process_inspection` com `BackgroundTasks`. A tarefa abre a
+própria `Session`. Na subida da API, `PROCESSING` órfão vira `FAILED`. Duas decisões:
+- um `AnalysisError` (mídia inválida) vira `FAILED` com o motivo; qualquer **outro** erro, em
+  segundo plano, também vira `FAILED`, mas com motivo genérico e o detalhe só no log — não há
+  cliente a quem devolver um erro 500, e uma exceção solta deixaria a inspeção em `PROCESSING`
+  para sempre (é a única captura geral do projeto, e está comentada no código);
+- um arquivo corrompido, que antes voltava `FAILED` na hora, agora volta 202 e vira `FAILED`
+  segundos depois: o frontend precisa acompanhar.
 
 ---
 

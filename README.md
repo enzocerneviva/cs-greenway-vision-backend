@@ -204,8 +204,8 @@ A implementação interna utilizada para obter a classificação pode evoluir se
 | `GET /health` | verificação de saúde |
 | `POST /roads`, `GET /roads` | cadastro/lista de rodovias (a geometria é buscada no OpenStreetMap) |
 | `POST /segments`, `GET /segments`, `PATCH /segments/{id}/location` | trechos e suas coordenadas |
-| `POST /inspections` | upload de vídeo/foto (multipart: `segment_id`, `file`, opcionais `km_start`, `km_end`, `direction`) e análise |
-| `GET /inspections`, `GET /inspections/{id}` | resultados, com os frames classificados |
+| `POST /inspections` | upload de vídeo/foto (multipart: `segment_id`, `file`, opcionais `km_start`, `km_end`, `direction`). Responde **202** com a inspeção em `PROCESSING`; a análise roda em segundo plano |
+| `GET /inspections`, `GET /inspections/{id}` | resultados, com os frames classificados. `status`: `PROCESSING`, `DONE` ou `FAILED` (com `failure_reason`) — consulte até sair de `PROCESSING` |
 | `DELETE /inspections` | apaga todas as análises (só para testes; ver plano de robustez) |
 | `/storage/...` | arquivos estáticos (imagens dos frames) |
 
@@ -286,10 +286,20 @@ Cadastra SP-330 (Anhanguera) e SP-348 (Bandeirantes) com a geometria buscada no 
 Pelo Swagger (http://localhost:8000/docs):
 
 1. `GET /roads` — confirme que as rodovias do seed aparecem;
-2. `POST /inspections` — envie um vídeo ou uma foto, informando o trecho;
-3. `GET /inspections` e `GET /inspections/{id}` — consulte o resultado e os frames classificados.
+2. `POST /inspections` — envie um vídeo ou uma foto, informando o trecho (responde 202 com `status: "PROCESSING"`);
+3. `GET /inspections/{id}` — repita até o `status` virar `DONE` ou `FAILED` e então veja o resultado e os frames classificados.
 
-### 6. Rodar o frontend (opcional)
+### 6. Rodar os testes
+
+Com o venv ativo, na raiz do projeto:
+
+```powershell
+pytest
+```
+
+Os testes usam um banco em memória, pastas temporárias e um Vision Engine falso: não tocam o `greenway.db` nem o `storage/` e não carregam o modelo (rodam em poucos segundos).
+
+### 7. Rodar o frontend (opcional)
 
 O frontend fica em outro repositório (`cs-greenway-vision-frontend`):
 

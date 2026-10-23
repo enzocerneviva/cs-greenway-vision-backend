@@ -164,7 +164,7 @@ Sem essa camada, cada Service (ou rota) precisaria montar suas próprias queries
 
 Cada entidade (`Road`, `Segment`, `Video`, `Inspection`, `FrameAnalysis`) tem seu próprio módulo de repository em `app/repositories/`, com operações básicas (`create`, `get_by_id`, `list_all`, `delete_all` quando aplicável).
 
-**Ponto de atenção conhecido:** hoje cada `create()` faz `commit()` próprio, então a criação de uma inspeção não é atômica. A correção (o service passa a fazer um único `commit`) está planejada no item 6 de `docs/plans/plano-v2.md`.
+**Quem confirma a transação.** Os repositories só fazem `add`/`flush`, nunca `commit`. Quem confirma (`commit`) ou desfaz (`rollback`) é o caso de uso: o service, ou a rota quando ela não passa por um service (`/roads`, `/segments`). Assim uma operação que mexe em várias tabelas é "tudo ou nada".
 
 ---
 
@@ -379,7 +379,7 @@ Video (o arquivo enviado numa inspeção — vídeo ou foto)
         ▼
 Inspection (resultado de UMA análise — vínculo 1:1 com Video)
   id, video_id (único), measurement_value, measurement_unit,
-  priority, model_version, status (DONE/FAILED), analyzed_at, created_at,
+  priority, model_version, status (PROCESSING/DONE/FAILED), failure_reason, analyzed_at, created_at,
   direction ("CAPITAL"/"INTERIOR", sentido da pista inspecionada)
         │
         ▼
@@ -404,49 +404,48 @@ Essa separação evita acoplar diretamente a estrutura interna do banco aos cont
 
 # 11. Fluxo completo de uma inspeção
 
-Implementado (`POST /inspections`, multipart: `segment_id` + arquivo de vídeo ou foto, opcionais `km_start`, `km_end`, `direction`). A análise é **síncrona**: a resposta só volta depois do processamento (ver item 8 de `docs/plans/plano-v2.md`).
+Implementado (`POST /inspections`, multipart: `segment_id` + arquivo de vídeo ou foto, opcionais `km_start`, `km_end`, `direction`). O fluxo tem **dois passos**: o `POST` aceita o arquivo e responde na hora (202); a análise roda em segundo plano.
 
 ```text
                  FRONTEND
-                    │
-                    │ POST /inspections
-                    │ segment_id + video
+                    │  POST /inspections (segment_id + arquivo)
                     ▼
-              ROTA (app/api/routes/inspection.py)
-                    │  fina — delega tudo pro service
-                    ▼
-       INSPECTION SERVICE (app/services/inspection_service.py)
-                    │
-                    │ 1. valida que o Segment existe (404 se não)
-                    │ 2. valida tipo/tamanho e salva o arquivo em disco
-                    │    (storage/videos/ ou storage/images/, nome UUID)
-                    │ 3. persiste o Video (via Repository)
-                    ▼
-              VISION ENGINE (app/vision/engine.py)
+              ROTA (app/api/routes/inspection.py) — fina
                     │
                     ▼
-          FRAMES  →  PRÉ-FILTRO (HSV)  →  EMBEDDING (CNN)  →  RANDOMFOREST
+   ── PASSO 1: accept_inspection (síncrono, rápido) ──────────────
+     1. valida que o Segment existe (404 se não)
+     2. valida tipo/tamanho e salva o arquivo (storage/videos|images, nome UUID)
+     3. cria Video + Inspection(status = PROCESSING) — UM commit
+     (se a gravação falhar: rollback e o arquivo salvo é apagado)
                     │
                     ▼
-              ANALYSIS RESULT (+ resultado por frame; JPEGs em storage/frames/)
+        RESPOSTA 202  { id, status: "PROCESSING", ... }  ──►  FRONTEND
                     │
-          ┌─────────┴─────────┐
-          │ sucesso            │ exceção
-          ▼                    ▼
-   Inspection(status=DONE)  Inspection(status=FAILED)
-   + FrameAnalysis por frame   (sem motivo registrado hoje —
-     (km estimado por           previsto: failure_reason)
-      interpolação)
+                    │  (depois da resposta, em segundo plano — BackgroundTasks)
+                    ▼
+   ── PASSO 2: process_inspection (abre a própria Session) ───────
                     │
                     ▼
-       persiste via Repository → DATABASE
+        VISION ENGINE (app/vision/engine.py)
+        FRAMES → PRÉ-FILTRO (HSV) → EMBEDDING (CNN) → RANDOMFOREST
                     │
-                    ▼
-                RESPONSE
-                    │
-                    ▼
-                FRONTEND
+          ┌─────────┴───────────────────────────┐
+          │ sucesso                              │ AnalysisError (mídia ruim)
+          ▼                                      ▼
+   UM commit: Inspection(DONE) +          Inspection(FAILED) + failure_reason
+   todos os FrameAnalysis                 (imagens parciais apagadas)
+   (km estimado por interpolação)
+          │
+          └─ qualquer outro erro (bug): rollback, imagens apagadas,
+             Inspection(FAILED, "erro interno"), detalhe só no log
+
+FRONTEND: GET /inspections/{id} periodicamente até sair de PROCESSING
 ```
+
+Por que dois passos: a análise (extrair frames + rede neural em CPU) pode levar dezenas de segundos e travaria a tela de upload. Por que uma `Session` própria no passo 2: a da requisição é fechada quando a resposta sai.
+
+**Na subida da API** (`lifespan` em `app/main.py`): inspeções ainda em `PROCESSING` viram `FAILED` ("servidor reiniciado" — a tarefa vivia no processo que morreu), e, se `VIDEO_RETENTION_DAYS` estiver configurado, os arquivos originais mais antigos são apagados. Pressupõe um único processo servidor.
 
 ---
 

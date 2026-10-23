@@ -24,7 +24,7 @@ PREDICTIONS_CSV = BASE_DIR / "predictions.csv"
 
 sys.path.insert(0, str(BASE_DIR.parents[1]))  # raiz do repo, pra importar app.vision.*
 
-from app.vision.engine import _classifier  # noqa: E402
+from app.vision.engine import _get_classifier  # noqa: E402
 from app.vision.feature_extractor_cnn import extract_embedding  # noqa: E402
 from app.vision.vegetation_detector import detectar_vegetacao  # noqa: E402
 
@@ -40,7 +40,7 @@ def main() -> None:
     for path in image_paths:
         image = Image.open(path).convert("RGB")
         embedding = extract_embedding(image)
-        predicted = _classifier.predict([embedding])[0]
+        predicted = _get_classifier().predict([embedding])[0]
 
         # % de verde (pré-filtro), só como referência complementar aqui —
         # não filtra nada neste teste, classificamos todas de propósito.

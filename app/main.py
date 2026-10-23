@@ -1,16 +1,50 @@
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.core.config import CORS_ORIGINS
+from sqlalchemy.exc import OperationalError
+
+from app.core.config import CORS_ORIGINS, VIDEO_RETENTION_DAYS
+from app.database.session import SessionLocal
 from app.api.routes import road, segment, inspection, meta
+from app.services import inspection_service
+
+logger = logging.getLogger(__name__)
+
+
+def _startup_maintenance() -> None:
+    """Roda uma vez, na subida da API."""
+    db = SessionLocal()
+    try:
+        orphaned = inspection_service.fail_orphaned_processing(db)
+        if orphaned:
+            logger.warning("%d inspeção(ões) em PROCESSING marcada(s) como FAILED (reinício).", orphaned)
+        if VIDEO_RETENTION_DAYS is not None:
+            removed = inspection_service.purge_expired_media(db, VIDEO_RETENTION_DAYS)
+            logger.info("Retenção: %d arquivo(s) original(is) apagado(s).", removed)
+    except OperationalError:
+        # Banco sem tabelas (migrações não aplicadas): avisa claramente em vez
+        # de derrubar a API com um erro de SQL.
+        logger.error("Banco sem o esquema esperado. Rode: alembic upgrade head")
+    finally:
+        db.close()
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    _startup_maintenance()
+    yield
+
 
 app = FastAPI(
     title="GreenWay Vision API",
     description="Backend da plataforma GreenWay Vision",
-    version="0.1.0"
+    version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(

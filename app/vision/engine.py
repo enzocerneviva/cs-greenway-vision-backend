@@ -5,6 +5,7 @@
 # Este módulo não deve depender de FastAPI, SQLAlchemy ou qualquer detalhe
 # do backend — recebe um caminho de vídeo, devolve um resultado.
 
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -13,7 +14,6 @@ import joblib
 from PIL import Image
 
 from app.vision.analysis_result import AnalysisError, AnalysisResult, FrameResult
-from app.vision.feature_extractor_cnn import extract_embedding
 from app.vision.frame_extractor import extrair_frames
 from app.vision.vegetation_detector import detectar_vegetacao
 
@@ -31,7 +31,14 @@ PRE_FILTER_MIN_GREEN_PERCENT = 5.0
 # do que deixar passar um ponto realmente crítico visto em só alguns frames.
 _PRIORITY_SEVERITY = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
 
-_classifier = joblib.load(MODEL_PATH)
+
+
+@lru_cache(maxsize=1)
+def _get_classifier():
+    # Carregado na primeira classificação (e só uma vez), não no import:
+    # importar o engine fica barato — a API sobe rápido e os testes não
+    # precisam do arquivo do modelo.
+    return joblib.load(MODEL_PATH)
 
 
 def _frame_to_pil(frame) -> Image.Image:
@@ -41,18 +48,35 @@ def _frame_to_pil(frame) -> Image.Image:
 
 
 def _classify_frame(frame) -> str:
+    # Import aqui dentro de propósito: o torch/torchvision demoram a importar
+    # e só são necessários quando um frame realmente vai ser classificado.
+    from app.vision.feature_extractor_cnn import extract_embedding
+
     embedding = extract_embedding(_frame_to_pil(frame))
-    return _classifier.predict([embedding])[0]
+    return _get_classifier().predict([embedding])[0]
+
+
+def _save_display_frame(frame, destination: Path, max_width: int, jpeg_quality: int) -> None:
+    # Versão reduzida só pra exibição; o frame em resolução cheia já cumpriu
+    # seu papel (ir pro modelo) e não é guardado.
+    height, width = frame.shape[:2]
+    if width > max_width:
+        new_height = round(height * max_width / width)
+        frame = cv2.resize(frame, (max_width, new_height), interpolation=cv2.INTER_AREA)
+    cv2.imwrite(str(destination), frame, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
 
 
 def analyze(
     file_path: str,
     media_type: str = "video",
     frame_image_dir: Optional[Path] = None,
+    frame_max_width: int = 640,
+    frame_jpeg_quality: int = 80,
 ) -> AnalysisResult:
     """
     frame_image_dir, se passado, faz cada frame classificado ser salvo como
-    JPEG nesse diretório ({frame_index}.jpg) — usado pra dar suporte à
+    JPEG nesse diretório ({frame_index}.jpg), reduzido a no máximo
+    frame_max_width pixels de largura — usado pra dar suporte à
     visualização de frame analysis no frontend. Opcional porque o vision
     engine deve continuar utilizável (e testável) sem depender de onde o
     backend guarda arquivos.
@@ -93,7 +117,7 @@ def analyze(
         image_path = None
         if frame_image_dir is not None:
             frame_file = frame_image_dir / f"{index}.jpg"
-            cv2.imwrite(str(frame_file), frame)
+            _save_display_frame(frame, frame_file, frame_max_width, frame_jpeg_quality)
             image_path = frame_file.as_posix()
 
         frame_results.append(FrameResult(

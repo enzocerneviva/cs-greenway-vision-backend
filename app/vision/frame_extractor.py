@@ -17,7 +17,14 @@ def extrair_frames(caminho_video: str, intervalo_segundos: int = 1) -> list:
         raise ValueError(f"Não foi possível abrir o vídeo: {caminho_video}")
 
     fps = video.get(cv2.CAP_PROP_FPS)
-    intervalo = int(fps * intervalo_segundos)
+    # Arquivo corrompido ou sem metadados de fps: sem isso, o "frame_atual %
+    # intervalo" abaixo dividiria por zero.
+    if not fps or fps <= 0:
+        video.release()
+        raise ValueError(f"Vídeo com taxa de quadros inválida (fps={fps}): {caminho_video}")
+
+    # Mínimo de 1: vídeo com menos de 1 fps daria intervalo 0.
+    intervalo = max(1, int(fps * intervalo_segundos))
 
     frames_extraidos = []
     frame_atual = 0

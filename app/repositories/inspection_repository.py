@@ -5,8 +5,7 @@ from app.models import Inspection
 
 def create(db: Session, inspection: Inspection) -> Inspection:
     db.add(inspection)
-    db.commit()
-    db.refresh(inspection)
+    db.flush()  # envia o INSERT (gera o id) sem confirmar a transação
     return inspection
 
 
@@ -18,6 +17,9 @@ def list_all(db: Session) -> List[Inspection]:
     return db.query(Inspection).all()
 
 
+def list_by_status(db: Session, status: str) -> List[Inspection]:
+    return db.query(Inspection).filter(Inspection.status == status).all()
+
+
 def delete_all(db: Session) -> None:
     db.query(Inspection).delete()
-    db.commit()

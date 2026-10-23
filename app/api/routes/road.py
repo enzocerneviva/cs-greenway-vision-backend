@@ -17,7 +17,9 @@ def create_road(payload: RoadCreate, db: Session = Depends(get_db)):
     # Busca automática do traçado no OpenStreetMap — melhor esforço, nunca
     # impede o cadastro (ver app/services/geocoding_service.py).
     road.geometry = geocoding_service.fetch_road_geometry(payload.name)
-    return road_repository.create(db, road)
+    road_repository.create(db, road)
+    db.commit()  # o repository só faz flush; confirmar é com quem chama
+    return road
 
 
 @router.get("", response_model=List[RoadResponse])

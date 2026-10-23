@@ -5,8 +5,7 @@ from app.models import Road
 
 def create(db: Session, road: Road) -> Road:
     db.add(road)
-    db.commit()
-    db.refresh(road)
+    db.flush()  # envia o INSERT (gera o id) sem confirmar a transação
     return road
 
 
