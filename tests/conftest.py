@@ -68,7 +68,13 @@ def segment(db):
 
 def make_result(priorities=("LOW", "HIGH", "LOW", "LOW")) -> AnalysisResult:
     frames = [
-        FrameResult(frame_index=i, timestamp_seconds=float(i), green_percent=10.0 * i, priority=p)
+        FrameResult(
+            frame_index=i,
+            timestamp_seconds=float(i),
+            green_percent=10.0 * i,
+            priority=p,
+            confidence=None if i == 0 else round(0.5 + 0.1 * i, 2),
+        )
         for i, p in enumerate(priorities)
     ]
     worst = max(priorities, key=["LOW", "MEDIUM", "HIGH"].index)

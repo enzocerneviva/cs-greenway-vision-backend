@@ -116,3 +116,4 @@ def test_meta_exposes_the_configuration(client):
     assert meta["timezone"] == "America/Sao_Paulo"
     assert meta["block_size_km"] == 0.5
     assert isinstance(meta["admin_reset_enabled"], bool)
+    assert meta["low_confidence_threshold"] == 0.6

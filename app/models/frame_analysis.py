@@ -19,6 +19,9 @@ class FrameAnalysis(Base):
     estimated_km = Column(Float, nullable=False)
     green_percent = Column(Float, nullable=False)
     priority = Column(String, nullable=False)
+    # Certeza do classificador (0 a 1) na classe escolhida; nulo quando o frame
+    # não passou pelo modelo (pré-filtro de cor) e nas inspeções antigas.
+    confidence = Column(Float, nullable=True)
     # Caminho relativo à raiz do projeto (ex.: "storage/frames/12/0.jpg"),
     # servido estaticamente — ver app/main.py. Nulo se a imagem não foi
     # persistida (não deveria acontecer em uso normal, mas o campo é opcional

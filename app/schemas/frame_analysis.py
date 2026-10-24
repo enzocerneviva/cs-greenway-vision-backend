@@ -10,6 +10,7 @@ class FrameAnalysisResponse(BaseModel):
     estimated_km: float
     green_percent: float
     priority: Priority
+    confidence: Optional[float]
     image_path: Optional[str]
 
     class Config:

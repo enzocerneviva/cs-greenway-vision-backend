@@ -280,6 +280,7 @@ class FrameResult:
     timestamp_seconds: float
     green_percent: float
     priority: str
+    confidence: Optional[float] = None     # fração de votos da classe escolhida (0 a 1); None se o pré-filtro decidiu
     image_path: Optional[str] = None
 
 @dataclass
@@ -385,7 +386,7 @@ Inspection (resultado de UMA análise — vínculo 1:1 com Video)
         ▼
 FrameAnalysis (resultado por frame — N por Inspection)
   id, inspection_id, frame_index, timestamp_seconds,
-  estimated_km, green_percent, priority, image_path
+  estimated_km, green_percent, priority, confidence (nula se o modelo não avaliou o frame), image_path
 ```
 
 `Road`/`Segment` existem como cadastro relativamente estável. `Video` nasce no upload. `Inspection` nasce (ou falha) na análise — por isso são tabelas separadas: cada uma tem um ciclo de vida diferente. `FrameAnalysis` guarda o detalhe de cada frame e a posição estimada.

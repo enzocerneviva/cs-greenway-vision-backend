@@ -22,6 +22,12 @@ MAX_IMAGE_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB — imagem é bem menor que ví
 # em desenvolvimento; desligar com ADMIN_RESET_ENABLED=false.
 ADMIN_RESET_ENABLED = os.environ.get("ADMIN_RESET_ENABLED", "true").lower() == "true"
 
+# Abaixo disto a confiança do classificador num frame é considerada "baixa"
+# (o frontend sinaliza o frame). Escolhido na avaliação do Mapillary com
+# validação por blocos: >= 0,6 mantém ~56 % dos frames com ~92 % de acerto.
+# É um sinal relativo, não uma probabilidade — ver docs/plans/plano-v2.md, item 9.
+LOW_CONFIDENCE_THRESHOLD = 0.6
+
 # Imagem de exibição de cada frame analisado (a que o frontend mostra). O frame
 # em resolução cheia só serve ao modelo e não é guardado.
 FRAME_DISPLAY_MAX_WIDTH = 640

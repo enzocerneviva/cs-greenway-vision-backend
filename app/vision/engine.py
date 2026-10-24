@@ -47,13 +47,22 @@ def _frame_to_pil(frame) -> Image.Image:
     return Image.fromarray(rgb_frame)
 
 
-def _classify_frame(frame) -> str:
+def _predict_with_confidence(embedding) -> tuple[str, float]:
+    """Classe escolhida e a fração de votos que ela recebeu (a "confiança")."""
+    classifier = _get_classifier()
+    probabilities = classifier.predict_proba([embedding])[0]
+    # classes_ está em ordem alfabética (HIGH, LOW, MEDIUM) — o índice da maior
+    # probabilidade é o índice da classe correspondente.
+    best = int(probabilities.argmax())
+    return str(classifier.classes_[best]), round(float(probabilities[best]), 4)
+
+
+def _classify_frame(frame) -> tuple[str, float]:
     # Import aqui dentro de propósito: o torch/torchvision demoram a importar
     # e só são necessários quando um frame realmente vai ser classificado.
     from app.vision.feature_extractor_cnn import extract_embedding
 
-    embedding = extract_embedding(_frame_to_pil(frame))
-    return _get_classifier().predict([embedding])[0]
+    return _predict_with_confidence(extract_embedding(_frame_to_pil(frame)))
 
 
 def _save_display_frame(frame, destination: Path, max_width: int, jpeg_quality: int) -> None:
@@ -108,9 +117,10 @@ def analyze(
             # convenção (mesmo raciocínio de antes), mas ainda vira um ponto no
             # rastro, pra a visualização por frame ficar contínua.
             if green_percent >= PRE_FILTER_MIN_GREEN_PERCENT:
-                priority = _classify_frame(frame)
+                priority, confidence = _classify_frame(frame)
             else:
-                priority = "LOW"
+                # O modelo não avaliou este frame: sem confiança a informar.
+                priority, confidence = "LOW", None
         except (cv2.error, RuntimeError) as exc:
             raise AnalysisError(f"Falha ao processar o frame {index}") from exc
 
@@ -125,6 +135,7 @@ def analyze(
             timestamp_seconds=timestamp_seconds,
             green_percent=green_percent,
             priority=priority,
+            confidence=confidence,
             image_path=image_path,
         ))
 

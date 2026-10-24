@@ -33,6 +33,14 @@ def test_upload_responds_202_processing_then_ends_done(client, segment, fake_eng
     assert len(done["frame_analyses"]) == 4
 
 
+def test_frame_confidence_is_stored_and_returned(client, segment, fake_engine):
+    response = post_upload(client, segment.id)
+
+    frames = get_inspection(client, response.json()["id"])["frame_analyses"]
+    # o 1º frame não passou pelo modelo (pré-filtro): sem confiança
+    assert [f["confidence"] for f in frames] == [None, 0.6, 0.7, 0.8]
+
+
 def test_engine_receives_display_frame_settings(client, segment, fake_engine):
     post_upload(client, segment.id)
 

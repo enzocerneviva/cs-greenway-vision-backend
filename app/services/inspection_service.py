@@ -317,6 +317,7 @@ def _build_frame_analyses(
             estimated_km=estimated_km,
             green_percent=frame_result.green_percent,
             priority=frame_result.priority,
+            confidence=frame_result.confidence,
             image_path=image_path,
         ))
     return frame_analyses

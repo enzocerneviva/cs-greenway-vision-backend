@@ -19,6 +19,11 @@ class FrameResult:
     timestamp_seconds: float
     green_percent: float
     priority: str
+    # Fração das árvores do RandomForest que votaram na classe escolhida
+    # (0 a 1) — um sinal RELATIVO de certeza, não uma probabilidade calibrada.
+    # None quando o modelo não avaliou o frame (o pré-filtro de cor já o
+    # classificou como LOW).
+    confidence: Optional[float] = None
     # Caminho (relativo à raiz do projeto, estilo storage/frames/...) da
     # imagem do frame salva em disco — None se quem chamou analyze() não
     # pediu pra persistir os frames (ex.: testes do vision engine isolado).

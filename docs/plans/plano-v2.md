@@ -121,7 +121,7 @@ O Alembic **não é automático**: nada acontece ao subir o uvicorn. Se você es
   que aceita `NULL` é simples.
 
 **Colunas novas previstas neste plano** (cada uma vira uma migração):
-- confiança do modelo por frame, em `frame_analyses` (item 9);
+- confiança do modelo por frame, em `frame_analyses` (item 9; migração `0002`, já aplicada);
 - posição real por frame, em `frame_analyses` (dispositivo de borda).
 
 **Pronto quando:** `alembic upgrade head` num banco vazio cria o esquema completo;
@@ -349,48 +349,81 @@ própria `Session`. Na subida da API, `PROCESSING` órfão vira `FAILED`. Duas d
 
 # PARTE C — Modelo de visão
 
-## Item 9 — Modelo v2: reconhecer melhor a classe MEDIUM
+## Item 9 — Avaliar o modelo com honestidade e expor a confiança
 
-**O que a medição mostra** (130 imagens de teste, `data/mapillary/model/test_predictions.csv`):
+**O problema inicial.** No conjunto de teste do treino (130 imagens) a acurácia é 88,5 %,
+mas a classe MEDIUM só acerta 3 de 13. Na prática isso infla HIGH e polui a fila de ação e
+as sugestões da Agenda.
 
-| Classe real | Amostras | Acertos |
-|---|---|---|
-| HIGH | 77 | 75 |
-| LOW | 40 | 37 |
-| MEDIUM | 13 | **3** (23 %) |
+**Regra do item:** cada mudança é um **experimento medido**, nunca um ajuste às cegas.
+O script `data/mapillary/evaluate_classifier.py` roda as medições abaixo sem treinar nem
+alterar o modelo em uso; o relatório do modelo atual fica em
+`data/mapillary/model/evaluation.md`.
 
-A acurácia geral é 88,5 %, mas ela **esconde** que a classe MEDIUM praticamente não é
-reconhecida (9 das 13 viram HIGH). Há muito mais exemplos de HIGH do que de MEDIUM no
-treino, e o modelo aprende o que domina. Na prática isso infla HIGH e polui a fila de
-ação e as sugestões da Agenda.
+### O que a avaliação mostrou
 
-**Regra do item:** cada mudança é um **experimento medido** (resultado antes e depois),
-nunca um ajuste às cegas. Verifique antes se as imagens do dataset estão disponíveis
-localmente.
+O dataset tem 648 imagens rotuladas, mas só **7 sequências** do Mapillary (cada uma é uma
+viagem com fotos quase idênticas em sequência). **Uma única sequência concentra os 384 HIGH
+e 63 dos 65 MEDIUM**; as outras são quase só LOW. Todas as imagens do teste vêm de
+sequências que também estão no treino. Consequências, medidas com 5 partes de validação:
 
-**Experimentos, nesta ordem:**
-1. **Métricas por classe** (precisão, recall, F1 e matriz de confusão) como saída
-   padrão do treino, com **validação cruzada** em vez de um único corte treino/teste.
-   Com 13 exemplos de MEDIUM, um único corte é estatisticamente fraco.
-2. **Pesos por classe** (`class_weight="balanced"` no RandomForest): custa uma linha e
-   faz erros em MEDIUM pesarem mais.
-3. **Mais dados** de MEDIUM e LOW (rotular mais imagens do Mapillary e de
-   `data/images-real-road/`). É o ganho mais provável.
-4. **Confiança por frame** (`predict_proba`): guardar quanto o modelo "tem certeza".
-   Exige coluna nova (migração, item 1) e permite ao front sinalizar baixa confiança.
-5. **Agregação do vídeo.** Hoje vale o **pior caso**: um único frame HIGH define o
-   vídeo inteiro. Testar alternativas, como HIGH só se pelo menos *k* frames ou uma
-   fração dos frames forem HIGH, e comparar com rótulos de vídeo reais.
-6. **Pré-filtro HSV.** Frames com menos de 5 % de verde (`PRE_FILTER_MIN_GREEN_PERCENT`)
-   são marcados LOW sem passar pelo modelo. Esse corte nunca foi validado: medir quantos
-   frames MEDIUM/HIGH reais ele descarta.
-7. **Versionamento.** Gravar junto do `classifier.joblib` os metadados do treino
-   (dataset, data, métricas); cada inspeção já guarda `model_version`.
-8. **Avaliação em dados reais de câmera** (`data/images-real-road/`) para medir a
-   diferença entre as imagens do Mapillary e a captura real.
+| Como separar treino/teste | Acurácia | F1 médio | Recall LOW / MEDIUM / HIGH |
+|---|---|---|---|
+| Aleatório (o que o treino faz) | 88,0 % | 0,75 | 91 % / 32 % / 96 % |
+| **Por blocos de 20 fotos seguidas** | **80,9 %** | **0,57** | 82 % / **0 %** / 94 % |
+| Só a sequência grande (mesma estrada) | 80,6 % | 0,51 | 42 % / 6 % / 98 % |
 
-**Pronto quando:** existe uma tabela antes/depois com as métricas por classe e o recall
-de MEDIUM melhorou sem derrubar as outras classes.
+- A nota de 88 % está **inflada** por fotos vizinhas quase idênticas; com validação honesta,
+  ~81 %, e MEDIUM não é reconhecida. Sempre responder HIGH já daria 59 % (77 % dentro da
+  estrada grande).
+- O que o modelo separa bem é LOW (outras estradas) de HIGH (a estrada grande): parte do
+  sinal é o **lugar**, não só a vegetação.
+- **O gargalo é de dados, não de arquitetura.** Rotular fotos de MEDIUM e HIGH de outras
+  estradas e de câmeras reais é o ganho real; é trabalho de rotulação, não de código.
+
+Outras medições (todas no relatório):
+- **Resolução/recorte não é o gargalo.** O modelo recorta o centro 224x224 da imagem. Usar a
+  imagem inteira esticada dá 88,3 % (aleatório) e 82,1 % (por blocos): diferença dentro do
+  ruído. Nas 15 fotos de campo (todas LOW), a imagem inteira foi pior (10/15 contra 13/15).
+- **Treinar uma CNN própria do zero (ex.: Keras Sequential) não é recomendado** com estes
+  dados: ~36 cenas independentes não bastam para uma rede nova superar a MobileNet
+  pré-treinada, e traria uma dependência pesada (TensorFlow) ao projeto, que já usa PyTorch.
+  Se houver mais dados, o caminho é um modelo pequeno sobre os embeddings ou ajuste fino da
+  MobileNet.
+- **`class_weight="balanced"` já era usado** no treino (o plano anterior o listava como
+  experimento pendente).
+- **Pré-filtro de 5 % de verde:** descarta 1 % dos HIGH (4 de 384) e 14 % dos MEDIUM (9 de
+  65), além de 28 % dos LOW. Efeito pequeno, mas real para MEDIUM.
+
+### Confiança do frame (implementada)
+
+O RandomForest tem 200 árvores; cada uma vota em uma classe. A **confiança** de um frame é a
+fração de votos da classe escolhida (0 a 1). É um **sinal relativo**, não uma probabilidade
+calibrada. Na validação por blocos, a confiança média é 0,67 quando o modelo acerta e 0,52
+quando erra; ficando só com confiança >= 0,6, mantém 56 % das fotos com 91,8 % de acerto; com
+>= 0,7, 35 % das fotos com 96,5 %. Nas 15 fotos de campo a confiança fica entre 0,43 e 0,66,
+e as duas previsões erradas estão entre as menos confiantes: a câmera real está fora da
+distribuição do treino.
+
+- `FrameResult.confidence` (engine) -> `frame_analyses.confidence` (migração `0002`) ->
+  `confidence` em cada frame da API. É `null` quando o pré-filtro de cor classificou o frame
+  como LOW sem passar pelo modelo, e nas inspeções antigas.
+- O limite de "baixa confiança" vive no backend, em `LOW_CONFIDENCE_THRESHOLD` (0,6, em
+  `app/core/config.py`), e é informado ao frontend em `GET /meta`
+  (`low_confidence_threshold`), para os dois lados concordarem.
+
+### O que ainda está em aberto
+
+1. **Mais dados rotulados** (o ganho real). Rotular MEDIUM e HIGH de outras estradas e fotos
+   de campo; usar a validação por blocos como régua.
+2. **Agregação do vídeo.** Hoje vale o pior caso: um frame HIGH define o vídeo. Testar
+   alternativas (HIGH só com pelo menos *k* frames, ou ponderando pela confiança) exige
+   vídeos com rótulo real, que ainda não existem.
+3. **Versionar o treino:** o relatório `evaluation.md` registra as métricas do modelo atual;
+   a cada novo treino, regenerá-lo.
+
+**Pronto quando (desta parte):** a confiança chega ao frontend e o relatório de avaliação
+honesto está versionado. Melhorar MEDIUM de fato depende do item 1 acima.
 
 ---
 

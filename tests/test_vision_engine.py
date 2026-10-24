@@ -25,9 +25,9 @@ def black_frame():
 
 @pytest.fixture
 def classify_sequence(monkeypatch):
-    """Faz o classificador devolver, em ordem, as prioridades pedidas."""
-    def install(priorities):
-        remaining = iter(priorities)
+    """Faz o classificador devolver, em ordem, as prioridades pedidas (cada uma com a sua confiança)."""
+    def install(priorities, confidences=None):
+        remaining = iter(zip(priorities, confidences or [0.9] * len(priorities)))
         monkeypatch.setattr(engine, "_classify_frame", lambda frame: next(remaining))
     return install
 
@@ -69,6 +69,50 @@ def test_frame_results_keep_index_and_timestamp(monkeypatch, classify_sequence):
     frames = engine.analyze("qualquer.mp4", "video").frame_results
 
     assert [(fr.frame_index, fr.timestamp_seconds) for fr in frames] == [(0, 0.0), (1, 1.0)]
+
+
+# --- confiança do classificador ---------------------------------------------
+
+class StubClassifier:
+    """Imita o RandomForest: classes_ em ordem alfabética, como o scikit-learn deixa."""
+    classes_ = ["HIGH", "LOW", "MEDIUM"]
+
+    def __init__(self, probabilities):
+        self._probabilities = probabilities
+
+    def predict_proba(self, rows):
+        return np.array([self._probabilities])
+
+
+def test_confidence_is_the_vote_share_of_the_chosen_class(monkeypatch):
+    # LOW é o 2º da lista (índice 1) e tem a maior fatia: 0.7
+    monkeypatch.setattr(engine, "_get_classifier", lambda: StubClassifier([0.1, 0.7, 0.2]))
+
+    assert engine._predict_with_confidence([0.0]) == ("LOW", 0.7)
+
+
+def test_confidence_maps_the_right_class_even_when_it_is_not_the_first(monkeypatch):
+    monkeypatch.setattr(engine, "_get_classifier", lambda: StubClassifier([0.15, 0.25, 0.6]))
+
+    assert engine._predict_with_confidence([0.0]) == ("MEDIUM", 0.6)
+
+
+def test_frame_results_carry_the_confidence(monkeypatch, classify_sequence):
+    stub_frames(monkeypatch, [green_frame(), green_frame()])
+    classify_sequence(["LOW", "HIGH"], confidences=[0.55, 0.81])
+
+    frames = engine.analyze("x.mp4", "video").frame_results
+
+    assert [fr.confidence for fr in frames] == [0.55, 0.81]
+
+
+def test_frame_skipped_by_the_prefilter_has_no_confidence(monkeypatch):
+    stub_frames(monkeypatch, [black_frame()])
+
+    frames = engine.analyze("x.mp4", "video").frame_results
+
+    assert frames[0].priority == "LOW"
+    assert frames[0].confidence is None  # o modelo nem avaliou este frame
 
 
 # --- erros de entrada viram AnalysisError -----------------------------------

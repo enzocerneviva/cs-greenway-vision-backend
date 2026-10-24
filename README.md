@@ -202,6 +202,7 @@ A implementação interna utilizada para obter a classificação pode evoluir se
 | Rota | Função |
 |---|---|
 | `GET /health` | verificação de saúde |
+| `GET /meta` | configuração do backend (fuso, tamanho do bloco, se o reset está liberado, limite de baixa confiança) |
 | `POST /roads`, `GET /roads` | cadastro/lista de rodovias (a geometria é buscada no OpenStreetMap) |
 | `POST /segments`, `GET /segments`, `PATCH /segments/{id}/location` | trechos e suas coordenadas |
 | `POST /inspections` | upload de vídeo/foto (multipart: `segment_id`, `file`, opcionais `km_start`, `km_end`, `direction`). Responde **202** com a inspeção em `PROCESSING`; a análise roda em segundo plano |
