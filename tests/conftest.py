@@ -126,3 +126,74 @@ def post_upload(client, segment_id, content_type="image/jpeg", filename="foto.jp
         data={"segment_id": segment_id, **fields},
         files={"file": (filename, content, content_type)},
     )
+
+
+# --- Parte D (agenda e análise de dados) -------------------------------------
+
+from datetime import date, datetime, timedelta, timezone  # noqa: E402
+
+from app.core import clock  # noqa: E402
+from app.models import FrameAnalysis, Inspection, ScheduleEvent, Video  # noqa: E402
+
+# Terça-feira, 20/10/2026, 12:00 em São Paulo (15:00 UTC).
+FIXED_NOW = datetime(2026, 10, 20, 15, 0, tzinfo=timezone.utc)
+TODAY = date(2026, 10, 20)
+
+
+def days_ago(days: int) -> datetime:
+    """Instante UTC (sem tzinfo, como o banco devolve) `days` dias antes de FIXED_NOW."""
+    return (FIXED_NOW - timedelta(days=days)).replace(tzinfo=None)
+
+
+@pytest.fixture
+def frozen_clock(monkeypatch):
+    """Congela 'agora' em FIXED_NOW (terça-feira) pra datas previsíveis."""
+    monkeypatch.setattr(clock, "utc_now", lambda: FIXED_NOW)
+    return FIXED_NOW
+
+
+def add_inspection(db, segment, direction="CAPITAL", when=None, frames=((10.1, 10.0, "LOW"),), status="DONE"):
+    """
+    Cria Video + Inspection + FrameAnalysis direto no banco.
+    frames: tuplas (km, verde %, prioridade).
+    """
+    when = when or days_ago(0)
+    video = Video(segment_id=segment.id, file_path="x", original_filename="x", media_type="video", uploaded_at=when)
+    db.add(video)
+    db.flush()
+    worst = max((f[2] for f in frames), key=["LOW", "MEDIUM", "HIGH"].index) if frames else None
+    inspection = Inspection(
+        video_id=video.id, status=status, direction=direction, priority=worst if status == "DONE" else None,
+        analyzed_at=when if status == "DONE" else None, created_at=when,
+    )
+    db.add(inspection)
+    db.flush()
+    for index, (km, green, priority) in enumerate(frames):
+        db.add(FrameAnalysis(
+            inspection_id=inspection.id, frame_index=index, timestamp_seconds=float(index),
+            estimated_km=km, green_percent=green, priority=priority,
+        ))
+    db.commit()
+    return inspection
+
+
+def add_event(db, segment, type="INSPECTION", status="PLANNED", direction="CAPITAL", km_start=10.0, km_end=12.0,
+              scheduled_date=TODAY, completed_at=None, **extra):
+    event = ScheduleEvent(
+        type=type, status=status, road_id=segment.road_id, segment_id=segment.id, direction=direction,
+        km_start=km_start, km_end=km_end, scheduled_date=scheduled_date, completed_at=completed_at,
+        source="MANUAL", **extra,
+    )
+    db.add(event)
+    db.commit()
+    return event
+
+
+def event_payload(segment, **overrides):
+    """Corpo JSON válido de POST /schedule (a Agenda do frontend)."""
+    payload = {
+        "type": "INSPECTION", "road_id": segment.road_id, "direction": "CAPITAL",
+        "km_start": 10.0, "km_end": 11.0, "scheduled_date": "2026-10-22",
+    }
+    payload.update(overrides)
+    return payload

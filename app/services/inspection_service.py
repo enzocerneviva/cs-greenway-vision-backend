@@ -9,6 +9,7 @@ from fastapi import HTTPException, UploadFile
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core import clock
 from app.core.config import (
     FRAME_DISPLAY_MAX_WIDTH,
     FRAME_JPEG_QUALITY,
@@ -20,9 +21,11 @@ from app.models import FrameAnalysis, Inspection, Segment, Video
 from app.repositories import (
     frame_analysis_repository,
     inspection_repository,
+    schedule_repository,
     segment_repository,
     video_repository,
 )
+from app.services import schedule_service
 from app.vision import engine as vision_engine
 from app.vision.analysis_result import AnalysisError, FrameResult
 
@@ -203,7 +206,7 @@ def _run_analysis(
         inspection.priority = result.priority
         inspection.model_version = result.model_version
         inspection.status = "DONE"
-        inspection.analyzed_at = datetime.now(timezone.utc)
+        inspection.analyzed_at = clock.utc_now()
         frame_analysis_repository.create_many(
             db,
             _build_frame_analyses(
@@ -217,6 +220,25 @@ def _run_analysis(
         db.rollback()
         _discard_frame_images(frame_image_dir)
         raise
+
+    _auto_complete_events(db, inspection.id)
+
+
+def _auto_complete_events(db: Session, inspection_id: int) -> None:
+    """
+    Passo extra, DEPOIS de a análise já estar gravada: conclui os eventos de
+    agenda que esta inspeção cobre. Roda numa transação à parte de propósito —
+    se falhar, a análise continua DONE (a agenda é secundária) e o erro vai
+    para o log; quem quiser, conclui o evento à mão.
+    """
+    try:
+        completed = schedule_service.auto_complete_for_inspection(db, inspection_id)
+        if completed:
+            db.commit()
+            logger.info("Inspeção %s concluiu automaticamente os eventos %s", inspection_id, [e.id for e in completed])
+    except Exception:
+        logger.exception("Falha na conclusão automática de eventos (inspeção %s)", inspection_id)
+        db.rollback()
 
 
 def _mark_failed_by_id(db: Session, inspection_id: int, reason: str) -> None:
@@ -338,6 +360,8 @@ def reset_all_analyses(db: Session) -> None:
     pra testes: voltar o mapa/faixa de blocos pro estado "tudo cinza, sem
     inspeção" sem precisar recadastrar as rodovias.
     """
+    # Os eventos da agenda não podem continuar apontando para inspeções que somem.
+    schedule_repository.detach_inspections(db)
     frame_analysis_repository.delete_all(db)
     inspection_repository.delete_all(db)
     video_repository.delete_all(db)

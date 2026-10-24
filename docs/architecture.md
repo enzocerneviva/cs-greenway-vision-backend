@@ -395,6 +395,30 @@ FrameAnalysis (resultado por frame — N por Inspection)
 
 **Banco e migrações.** O esquema do banco (tabelas e colunas) é versionado com **Alembic** (`alembic/versions/`). Para criar o banco ou aplicar mudanças pendentes: `alembic upgrade head`. Para mudar o esquema: alterar o model em `app/models/`, gerar a migração (`alembic revision --autogenerate -m "descrição"`), revisar o arquivo gerado e aplicá-lo. A aplicação **não** cria tabelas ao subir (não há mais `create_all` no `main.py`).
 
+## Agenda e análise de dados
+
+Duas tabelas novas: `schedule_events` (uma inspeção ou roçada planejada para um intervalo de km, um
+sentido — ou os dois, se nulo — e uma data) e `suggestion_dismissals` (só o "Dispensar" do usuário;
+as sugestões em si não ficam gravadas).
+
+```text
+Frames (estimated_km)  ──►  leituras por BLOCO de 0,5 km  ──►  estado do bloco (block_service)
+Eventos da agenda      ──►  last_mowed_at / next_scheduled         │
+                                                  ┌────────────────┼──────────────────┐
+                                                  ▼                ▼                  ▼
+                                         visão geral/série   sugestões (agrupadas)   resumo da agenda
+                                         (analytics_service) (suggestion_service)    (schedule_service)
+```
+
+- **Bloco**: pedaço de 0,5 km de uma rodovia num sentido. Não existe no banco: é derivado do
+  `estimated_km` de cada frame (que é interpolado, não é GPS — todo valor por bloco é aproximado).
+- **Datas**: `app/core/clock.py` concentra "hoje" (fuso de São Paulo) e os instantes (UTC); os
+  testes congelam o relógio por ali.
+- **Conclusão automática**: ao fim de uma análise, eventos de inspeção planejados que a inspeção
+  cobre são concluídos (regras no item 15 de `docs/plans/plano-v2.md`).
+- Regras de negócio com valores fixos (intervalos máximos, antecedência, limite crítico de verde)
+  ficam em `app/core/config.py`.
+
 ## Schemas
 
 Representam os contratos utilizados pela API (`app/schemas/`): `RoadCreate`/`RoadResponse`, `SegmentCreate`/`SegmentLocationUpdate`/`SegmentResponse`, `InspectionResponse` e `FrameAnalysisResponse`.

@@ -3,3 +3,5 @@ from app.models.segment import Segment
 from app.models.video import Video
 from app.models.inspection import Inspection
 from app.models.frame_analysis import FrameAnalysis
+from app.models.schedule_event import ScheduleEvent
+from app.models.suggestion_dismissal import SuggestionDismissal

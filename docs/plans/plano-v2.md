@@ -228,7 +228,7 @@ O mesmo custo atrasa a subida da API.
 **Pronto quando:** `pytest` roda em segundos, sem baixar nem carregar modelo, e cobre a
 lista acima.
 
-**Como ficou.** `pytest` com 41 testes em menos de 1 segundo, em `tests/`: banco SQLite em
+**Como ficou.** `pytest` (a suíte cresce a cada parte; hoje são mais de 150 testes, em poucos segundos), em `tests/`: banco SQLite em
 memória por teste (`conftest.py`), pastas de storage temporárias e um Vision Engine falso. O
 modelo agora é carregado na primeira classificação (`functools.lru_cache`), e o `torch` só é
 importado quando um frame vai ser classificado (um teste garante que importar o engine não
@@ -481,6 +481,22 @@ reaberto.
 **Pronto quando:** o calendário do front cria, edita, conclui e remove eventos, e as
 validações acima retornam o erro esperado.
 
+**Como ficou.** `app/models/schedule_event.py`, `app/schemas/schedule.py`,
+`app/services/schedule_service.py`, `app/api/routes/schedule.py` (migração `0003`). Decisões que
+vão além do texto acima:
+- `POST /schedule` responde **201**. O filtro `direction` de `GET /schedule` inclui os eventos
+  sem sentido (valem para os dois).
+- Transições: `PLANNED <-> IN_PROGRESS`, qualquer um -> `CANCELED` (que só volta a `PLANNED`),
+  `PLANNED/IN_PROGRESS -> DONE`. `DONE` e `CANCELED` não aceitam edição (409). `DONE -> PLANNED`
+  só para o concluído automaticamente.
+- A duplicata (409) considera só eventos ativos (`PLANNED`/`IN_PROGRESS`) e compara por
+  **blocos em comum**; sentido nulo conflita com qualquer sentido.
+- Tipo, rodovia e km **não são editáveis** (PATCH com esses campos dá 422): para mudar, cria-se
+  outro evento.
+- `GET /schedule/summary` aceita `from`/`to`; sem eles, "esta semana" é segunda a domingo.
+- Datas e "hoje" vêm de `app/core/clock.py` (fuso de São Paulo; instantes sempre em UTC). No
+  Windows o `zoneinfo` precisa do pacote `tzdata`, agora declarado no `requirements.txt`.
+
 ## Item 11 — Estado dos blocos: `GET /analytics/blocks`
 
 **O que é.** O núcleo da Visão Geral: para cada bloco de 0,5 km de cada sentido, o que
@@ -511,6 +527,13 @@ sabemos agora. Todo o resto da Parte D consome isto.
 **Pronto quando:** a resposta lista todos os blocos de uma rodovia, com os nunca
 inspecionados como `priority = null`, e bate com o que o mapa já mostra.
 
+**Como ficou.** `app/services/block_service.py`. Dois passos: `load_blocks` (uma consulta de
+frames, segmentos e eventos; monta os blocos) e `state_at(bloco, data)` (estado numa data de
+referência). Por isso a visão geral calcula "hoje" e "o período anterior" sem recarregar nada.
+Blocos = os dos segmentos (nos dois sentidos) mais os que tiverem leitura fora deles. Com os
+dados reais: 1.228 blocos (2 rodovias, 2 sentidos). `next_scheduled` é o evento ativo mais
+próximo, de qualquer tipo.
+
 ## Item 12 — Visão geral e série temporal
 
 - **`GET /analytics/overview`:** indicadores do topo da tela com comparação ao período
@@ -526,6 +549,12 @@ inspecionados como `priority = null`, e bate com o que o mapa já mostra.
 
 **Pronto quando:** o painel mostra os indicadores com setas ▲▼ coerentes com o período
 anterior.
+
+**Como ficou.** `app/services/analytics_service.py`. `coverage_pct` conta blocos com alguma
+leitura **dentro** do período; `stale_blocks` inclui os nunca inspecionados (`STALE_INSPECTION_DAYS`
+= 30). O período anterior tem o mesmo tamanho e termina na véspera do atual. A série semanal
+conta a prioridade de cada inspeção uma vez (a pior entre os seus frames). Acrescentei
+`GET /analytics/mowing-effectiveness` (item 15), que usa estes mesmos dados.
 
 ## Item 13 — Crescimento e previsão
 
@@ -552,6 +581,14 @@ medida ruidosa. Deve ser rotulada como estimativa.
 
 **Pronto quando:** blocos com leituras suficientes mostram o crescimento por dia e a
 data prevista; os demais mostram `null`.
+
+**Como ficou.** `block_service.estimate_growth` (mínimos quadrados, em pontos de verde por dia,
+só com leituras depois da última roçada, no mínimo 3 leituras e 7 dias). O limite
+`CRITICAL_GREEN_PERCENT = 13,7` foi calibrado com
+`python -m data.mapillary.calibrate_critical_green`: mediana do verde das imagens HIGH. As
+medianas por classe são 7,4 (LOW), 10,1 (MEDIUM) e 13,7 (HIGH): o verde separa pouco as classes,
+então a previsão é uma estimativa de **tendência** e deve ser rotulada como tal. Bloco já HIGH,
+com tendência negativa ou com poucos dados fica sem previsão.
 
 ## Item 14 — Sugestões
 
@@ -583,6 +620,21 @@ Só os descartes ficam numa tabela `suggestion_dismissals(key, until)`, em que
 **Pronto quando:** a Agenda mostra poucas sugestões úteis, agrupadas por trecho, e
 "Dispensar" faz uma sugestão sumir até a data informada.
 
+**Como ficou.** `app/services/suggestion_service.py`. Decisões:
+- A supressão por "já tem evento planejado" vale **por tipo**: uma inspeção planejada não
+  impede sugerir a roçada de um bloco crítico.
+- Bloco que foi roçado **depois** da última leitura não gera sugestão de roçada (a leitura "alta"
+  ficou velha; o que falta é inspecionar de novo).
+- Urgência: `CRITICAL_NOW` 90 + até 10 (dias sem inspeção / 3); `PREDICTED_CRITICAL` 60 + (25 -
+  dias até o limite), máx. 85; `STALE_INSPECTION` 40 + até 20 (dias de atraso) + peso da prioridade
+  (alta 10, média 5); `NEVER_INSPECTED` 35.
+- Data sugerida: próximo dia útil (segunda a sexta; feriados ficam para depois). Para
+  `CRITICAL_NOW`, o primeiro que ainda não tem outra roçada na mesma rodovia e sentido. Para
+  `PREDICTED_CRITICAL`, a data prevista menos 7 dias, ajustada para dia útil.
+- `GET /schedule/suggestions` devolve 5 por padrão (máx. 20). "Dispensar" sem `until` esconde por
+  14 dias. Os motivos são texto pronto em pt-BR (vírgula decimal).
+- Com os dados reais (2 inspeções), 294 blocos nunca inspecionados viram **uma** sugestão.
+
 ## Item 15 — Conclusão automática e eficácia da roçada
 
 **Conclusão automática.** Quando uma inspeção termina com sucesso (`DONE`), um evento
@@ -601,6 +653,14 @@ concluída. Sai quase pronta do item 11.
 
 **Pronto quando:** enviar uma inspeção que cobre um evento planejado o conclui sem
 intervenção e permite reabri-lo.
+
+**Como ficou.** `schedule_service.auto_complete_for_inspection`, chamado por
+`inspection_service` **depois** que a análise já está gravada, numa transação separada: se
+falhar, a inspeção continua `DONE` e o erro vai para o log (o evento pode ser concluído à mão).
+Só conclui o que tem `PLANNED`, `INSPECTION`, mesmo sentido (não nulo), cobertura >= 80 % dos
+blocos do evento e data da inspeção >= data agendada - 3 dias. Ao apagar as análises
+(`DELETE /inspections`), os eventos concluídos automaticamente voltam a `PLANNED` e os
+concluídos à mão só perdem o vínculo com a inspeção.
 
 ---
 

@@ -207,6 +207,10 @@ A implementação interna utilizada para obter a classificação pode evoluir se
 | `POST /segments`, `GET /segments`, `PATCH /segments/{id}/location` | trechos e suas coordenadas |
 | `POST /inspections` | upload de vídeo/foto (multipart: `segment_id`, `file`, opcionais `km_start`, `km_end`, `direction`). Responde **202** com a inspeção em `PROCESSING`; a análise roda em segundo plano |
 | `GET /inspections`, `GET /inspections/{id}` | resultados, com os frames classificados. `status`: `PROCESSING`, `DONE` ou `FAILED` (com `failure_reason`) — consulte até sair de `PROCESSING` |
+| `GET/POST /schedule`, `GET/PATCH/DELETE /schedule/{id}`, `POST /schedule/{id}/complete` | Agenda: inspeções e roçadas planejadas (`GET` exige `from` e `to`, máx. 93 dias) |
+| `GET /schedule/summary`, `GET /schedule/suggestions`, `POST /schedule/suggestions/dismiss` | números do topo da Agenda; sugestões calculadas na hora (blocos contíguos agrupados); dispensar uma sugestão |
+| `GET /analytics/blocks` | estado atual de cada bloco de 0,5 km por rodovia e sentido (inclui os nunca inspecionados, crescimento e previsão) |
+| `GET /analytics/overview`, `/analytics/timeseries`, `/analytics/mowing-effectiveness` | indicadores com período anterior, série semanal e verde antes/depois de cada roçada |
 | `DELETE /inspections` | apaga todas as análises (só para testes; ver plano de robustez) |
 | `/storage/...` | arquivos estáticos (imagens dos frames) |
 

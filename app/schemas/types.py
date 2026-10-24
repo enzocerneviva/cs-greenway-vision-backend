@@ -22,3 +22,10 @@ def _to_utc_iso(value: datetime) -> str:
 
 
 UtcDatetime = Annotated[datetime, PlainSerializer(_to_utc_iso, return_type=str, when_used="json")]
+
+# Agenda
+ScheduleType = Literal["INSPECTION", "MOWING"]
+ScheduleStatus = Literal["PLANNED", "IN_PROGRESS", "DONE", "CANCELED"]
+EventSource = Literal["MANUAL", "SUGGESTION"]
+CompletionSource = Literal["MANUAL", "AUTO"]
+SuggestionReason = Literal["CRITICAL_NOW", "PREDICTED_CRITICAL", "STALE_INSPECTION", "NEVER_INSPECTED"]

@@ -10,7 +10,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.core.config import CORS_ORIGINS, VIDEO_RETENTION_DAYS
 from app.database.session import SessionLocal
-from app.api.routes import road, segment, inspection, meta
+from app.api.routes import analytics, inspection, meta, road, schedule, segment
 from app.services import inspection_service
 
 logger = logging.getLogger(__name__)
@@ -67,6 +67,8 @@ app.mount("/storage", StaticFiles(directory=str(STORAGE_DIR)), name="storage")
 app.include_router(road.router)
 app.include_router(segment.router)
 app.include_router(inspection.router)
+app.include_router(schedule.router)
+app.include_router(analytics.router)
 app.include_router(meta.router)
 
 
